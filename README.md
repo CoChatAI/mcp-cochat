@@ -45,10 +45,10 @@ Restart OpenCode to load the MCP. You'll see new slash commands: `/cochat:plans-
 ### Claude Code
 
 ```bash
-claude mcp add --transport stdio \
-  --env COCHAT_URL=https://app.cochat.ai \
-  --env COCHAT_API_KEY=your-api-key \
-  cochat -- npx @cochatai/mcp-cochat
+claude mcp add cochat \
+  -e COCHAT_URL="https://app.cochat.ai" \
+  -e COCHAT_API_KEY="your-api-key" \
+  -- npx @cochatai/mcp-cochat
 ```
 
 Or via JSON:
@@ -105,9 +105,10 @@ COCHAT_API_KEY = "your-api-key"
 Or via CLI:
 
 ```bash
-codex mcp add cochat --transport stdio -- npx @cochatai/mcp-cochat \
-  --env COCHAT_URL=https://app.cochat.ai \
-  --env COCHAT_API_KEY=your-api-key
+codex mcp add cochat \
+  -e COCHAT_URL="https://app.cochat.ai" \
+  -e COCHAT_API_KEY="your-api-key" \
+  -- npx @cochatai/mcp-cochat
 ```
 
 ### Kilo Code
@@ -346,10 +347,10 @@ Point your MCP client to the local build instead of npx:
 
 **Claude Code:**
 ```bash
-claude mcp add --transport stdio \
-  --env COCHAT_URL=https://app.cochat.ai \
-  --env COCHAT_API_KEY=your-api-key \
-  cochat -- node /path/to/mcp-cochat/dist/index.js
+claude mcp add cochat \
+  -e COCHAT_URL="https://app.cochat.ai" \
+  -e COCHAT_API_KEY="your-api-key" \
+  -- node /path/to/mcp-cochat/dist/index.js
 ```
 
 ### Project Structure
