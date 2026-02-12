@@ -1,0 +1,550 @@
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import {
+  CallToolRequestSchema,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+  ReadResourceRequestSchema,
+  SubscribeRequestSchema,
+  UnsubscribeRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+import { zodToJsonSchema } from "./zod-to-json-schema.js";
+
+import { CoChatClient, CoChatClientError } from "./cochat-client.js";
+import { resolveConfig, persistConfig, type CoChatConfig } from "./config.js";
+
+// Plans
+import { PlansShareSchema, plansShare } from "./tools/plans-share.js";
+import { PlansPullSchema, plansPull } from "./tools/plans-pull.js";
+import { PlansUpdateSchema, plansUpdate } from "./tools/plans-update.js";
+import { plansList } from "./tools/plans-list.js";
+
+// Projects
+import { ProjectsAddSchema, projectsAdd } from "./tools/projects-add.js";
+import { ProjectsGetSchema, projectsGet } from "./tools/projects-get.js";
+import { ProjectsSetContextSchema, projectsSetContext } from "./tools/projects-set-context.js";
+
+// Memories
+import { MemoryQuerySchema, memoryQuery } from "./tools/memory-query.js";
+import { MemoryAddSchema, memoryAdd } from "./tools/memory-add.js";
+import { memoryList } from "./tools/memory-list.js";
+import { MemoryDeleteSchema, memoryDelete } from "./tools/memory-delete.js";
+
+// Automations
+import { automationsList } from "./tools/automations-list.js";
+import { AutomationsTriggerSchema, automationsTrigger } from "./tools/automations-trigger.js";
+import { AutomationsRunsSchema, automationsRuns } from "./tools/automations-runs.js";
+
+// Resources
+import {
+  listPlanResources,
+  readPlanResource,
+  subscribeToPlan,
+  unsubscribeFromPlan,
+  cleanupSubscriptions,
+} from "./resources/plan-resource.js";
+
+// ---------------------------------------------------------------------------
+// Create and configure the MCP server
+// ---------------------------------------------------------------------------
+
+export function createServer(): Server {
+  const server = new Server(
+    { name: "cochat", version: "0.2.0" },
+    {
+      capabilities: {
+        tools: {},
+        prompts: {},
+        resources: { subscribe: true, listChanged: true },
+      },
+    },
+  );
+
+  let _clientSupportsElicitation = false;
+
+  server.oninitialized = () => {
+    const clientCaps = server.getClientCapabilities();
+    _clientSupportsElicitation = !!clientCaps?.elicitation;
+  };
+
+  // -----------------------------------------------------------------------
+  // Config resolution
+  // -----------------------------------------------------------------------
+
+  async function getClient(): Promise<CoChatClient> {
+    let config = resolveConfig();
+
+    if (!config && _clientSupportsElicitation) {
+      config = await elicitConfig(server);
+    }
+
+    if (!config) {
+      throw new Error(
+        "CoChat is not configured. Set COCHAT_URL and COCHAT_API_KEY environment variables.\n" +
+          "Example:\n" +
+          '  COCHAT_URL="https://your-cochat-instance.com"\n' +
+          '  COCHAT_API_KEY="sk-your-api-key"\n\n' +
+          "Generate an API key in CoChat: Settings > Account > API Key",
+      );
+    }
+
+    return new CoChatClient(config);
+  }
+
+  async function elicitConfig(srv: Server): Promise<CoChatConfig | null> {
+    try {
+      const result = await srv.request(
+        {
+          method: "elicitation/create",
+          params: {
+            message: "Configure CoChat connection. Enter your CoChat instance URL and API key.",
+            requestedSchema: {
+              type: "object",
+              properties: {
+                cochat_url: {
+                  type: "string",
+                  title: "CoChat URL",
+                  description: "URL of your CoChat instance (e.g., https://chat.yourcompany.com)",
+                  format: "uri",
+                },
+                api_key: {
+                  type: "string",
+                  title: "API Key",
+                  description: "Your CoChat API key (starts with sk-). Generate in Settings > Account > API Key.",
+                },
+              },
+              required: ["cochat_url", "api_key"],
+            },
+          },
+        },
+        {} as never,
+      ) as { action: string; content?: { cochat_url?: string; api_key?: string } };
+
+      if (result.action === "accept" && result.content?.cochat_url && result.content?.api_key) {
+        const config: CoChatConfig = {
+          cochatUrl: result.content.cochat_url,
+          apiKey: result.content.api_key,
+        };
+        persistConfig(config);
+        return config;
+      }
+    } catch {
+      // Elicitation not supported or failed
+    }
+    return null;
+  }
+
+  // -----------------------------------------------------------------------
+  // Tool definitions
+  // -----------------------------------------------------------------------
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: [
+      // --- Plans ---
+      {
+        name: "plans_share",
+        description:
+          "Share an implementation plan with engineers via CoChat. Creates a collaborative " +
+          "chat thread in the project folder. IMPORTANT: The 'description' field should " +
+          "contain the FULL plan document in markdown -- design rationale, architecture, " +
+          "data flow, technical approach, edge cases. Engineers read this as the primary document.",
+        inputSchema: zodToJsonSchema(PlansShareSchema),
+      },
+      {
+        name: "plans_pull",
+        description:
+          "Pull the latest state of a shared plan from CoChat, including feedback or changes from engineers.",
+        inputSchema: zodToJsonSchema(PlansPullSchema),
+      },
+      {
+        name: "plans_update",
+        description: "Push an updated plan to an existing CoChat collaborative chat thread.",
+        inputSchema: zodToJsonSchema(PlansUpdateSchema),
+      },
+      {
+        name: "plans_list",
+        description: "List all shared plans grouped by project, with feedback counts.",
+        inputSchema: { type: "object" as const, properties: {} },
+      },
+
+      // --- Projects ---
+      {
+        name: "projects_add",
+        description:
+          "Add a CoChat project for the current codebase. If a project with this name " +
+          "already exists, returns the existing one. Auto-detects project name from git remote.",
+        inputSchema: zodToJsonSchema(ProjectsAddSchema),
+      },
+      {
+        name: "projects_get",
+        description: "Get the current project's metadata, system prompt, and files.",
+        inputSchema: zodToJsonSchema(ProjectsGetSchema),
+      },
+      {
+        name: "projects_set_context",
+        description:
+          "Set the project system prompt. This is injected into all chats in this project on CoChat.",
+        inputSchema: zodToJsonSchema(ProjectsSetContextSchema),
+      },
+
+      // --- Memories ---
+      {
+        name: "memory_query",
+        description:
+          "Semantic search project memories in CoChat. Returns relevant memories ranked by similarity.",
+        inputSchema: zodToJsonSchema(MemoryQuerySchema),
+      },
+      {
+        name: "memory_add",
+        description:
+          "Add a memory to the current project in CoChat. Design decisions, architectural " +
+          "patterns, and important context become available in all CoChat conversations for this project.",
+        inputSchema: zodToJsonSchema(MemoryAddSchema),
+      },
+      {
+        name: "memory_list",
+        description: "List recent memories for the current project.",
+        inputSchema: { type: "object" as const, properties: {} },
+      },
+      {
+        name: "memory_delete",
+        description: "Delete a specific memory by ID.",
+        inputSchema: zodToJsonSchema(MemoryDeleteSchema),
+      },
+
+      // --- Automations ---
+      {
+        name: "automations_list",
+        description: "List automations for the current project, with trigger type and run status.",
+        inputSchema: { type: "object" as const, properties: {} },
+      },
+      {
+        name: "automations_trigger",
+        description: "Manually trigger/run a specific automation.",
+        inputSchema: zodToJsonSchema(AutomationsTriggerSchema),
+      },
+      {
+        name: "automations_runs",
+        description: "Get recent run history for an automation.",
+        inputSchema: zodToJsonSchema(AutomationsRunsSchema),
+      },
+    ],
+  }));
+
+  // -----------------------------------------------------------------------
+  // Tool dispatch
+  // -----------------------------------------------------------------------
+
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+
+    try {
+      const client = await getClient();
+
+      let result: string;
+      switch (name) {
+        // Plans
+        case "plans_share":
+          result = await plansShare(client, PlansShareSchema.parse(args));
+          break;
+        case "plans_pull":
+          result = await plansPull(client, PlansPullSchema.parse(args));
+          break;
+        case "plans_update":
+          result = await plansUpdate(client, PlansUpdateSchema.parse(args));
+          break;
+        case "plans_list":
+          result = await plansList(client);
+          break;
+
+        // Projects
+        case "projects_add":
+          result = await projectsAdd(client, ProjectsAddSchema.parse(args));
+          break;
+        case "projects_get":
+          result = await projectsGet(client, ProjectsGetSchema.parse(args));
+          break;
+        case "projects_set_context":
+          result = await projectsSetContext(client, ProjectsSetContextSchema.parse(args));
+          break;
+
+        // Memories
+        case "memory_query":
+          result = await memoryQuery(client, MemoryQuerySchema.parse(args));
+          break;
+        case "memory_add":
+          result = await memoryAdd(client, MemoryAddSchema.parse(args));
+          break;
+        case "memory_list":
+          result = await memoryList(client);
+          break;
+        case "memory_delete":
+          result = await memoryDelete(client, MemoryDeleteSchema.parse(args));
+          break;
+
+        // Automations
+        case "automations_list":
+          result = await automationsList(client);
+          break;
+        case "automations_trigger":
+          result = await automationsTrigger(client, AutomationsTriggerSchema.parse(args));
+          break;
+        case "automations_runs":
+          result = await automationsRuns(client, AutomationsRunsSchema.parse(args));
+          break;
+
+        default:
+          return {
+            content: [{ type: "text", text: `Unknown tool: ${name}` }],
+            isError: true,
+          };
+      }
+
+      return { content: [{ type: "text", text: result }] };
+    } catch (err) {
+      const message =
+        err instanceof CoChatClientError
+          ? `CoChat API error (${err.statusCode}): ${err.message}`
+          : err instanceof Error
+            ? err.message
+            : String(err);
+
+      return { content: [{ type: "text", text: message }], isError: true };
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Prompts
+  // -----------------------------------------------------------------------
+
+  server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+    prompts: [
+      {
+        name: "plans-share",
+        description: "Share the current plan with the team on CoChat for review",
+        arguments: [
+          {
+            name: "invite_emails",
+            description: "Comma-separated email addresses of engineers to invite (optional)",
+            required: false,
+          },
+        ],
+      },
+      {
+        name: "plans-pull",
+        description: "Pull the latest feedback from CoChat on a shared plan",
+        arguments: [
+          {
+            name: "chat_id",
+            description: "Chat ID of the plan to pull (optional, defaults to most recent)",
+            required: false,
+          },
+        ],
+      },
+      {
+        name: "memory-recall",
+        description: "Recall relevant project memories for the current coding task",
+        arguments: [
+          {
+            name: "query",
+            description: "What to search for in project memories (optional, defaults to current task context)",
+            required: false,
+          },
+        ],
+      },
+      {
+        name: "memory-save",
+        description: "Save a design decision or important context as a project memory",
+        arguments: [],
+      },
+      {
+        name: "automations-run",
+        description: "List and run a project automation",
+        arguments: [],
+      },
+    ],
+  }));
+
+  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+
+    switch (name) {
+      case "plans-share": {
+        const emailArg = args?.invite_emails ?? "";
+        const emailInstruction = emailArg ? `\n\nInvite these engineers: ${emailArg}` : "";
+
+        return {
+          description: "Share the current plan with the team on CoChat",
+          messages: [
+            {
+              role: "user" as const,
+              content: {
+                type: "text" as const,
+                text:
+                  "Look at the plan, task breakdown, or implementation approach we've been " +
+                  "discussing in this conversation. Use the plans_share tool to share it " +
+                  "with the team on CoChat.\n\n" +
+                  "CRITICAL: Put the FULL plan context into the 'description' field. This " +
+                  "means ALL of the following from our discussion:\n" +
+                  "- Design rationale and motivation\n" +
+                  "- Architecture decisions and technical approach\n" +
+                  "- Data flow and component interactions\n" +
+                  "- Edge cases and how they're handled\n" +
+                  "- Alternatives considered and why they were rejected\n" +
+                  "- Any constraints, prerequisites, or dependencies\n\n" +
+                  "The description should read like a complete design document that an " +
+                  "engineer can review independently -- NOT a one-line summary. Use full " +
+                  "markdown formatting.\n\n" +
+                  "The 'items' field should contain the structured task breakdown." +
+                  emailInstruction,
+              },
+            },
+          ],
+        };
+      }
+
+      case "plans-pull": {
+        const chatId = args?.chat_id ?? "";
+        const chatIdInstruction = chatId ? ` Use chat_id: ${chatId}` : "";
+
+        return {
+          description: "Pull the latest feedback from CoChat",
+          messages: [
+            {
+              role: "user" as const,
+              content: {
+                type: "text" as const,
+                text:
+                  "Use the plans_pull tool to fetch the latest state and feedback from " +
+                  "CoChat on the most recently shared plan." + chatIdInstruction + "\n\n" +
+                  "Summarize:\n" +
+                  "- What feedback engineers have provided\n" +
+                  "- What task statuses have changed\n" +
+                  "- Any actionable items, blockers, or concerns raised\n" +
+                  "- Whether the plan is approved or needs further iteration",
+              },
+            },
+          ],
+        };
+      }
+
+      case "memory-recall": {
+        const query = args?.query ?? "";
+        const queryInstruction = query
+          ? `Search for: "${query}"`
+          : "Search for memories relevant to what we're currently working on in this conversation.";
+
+        return {
+          description: "Recall relevant project memories",
+          messages: [
+            {
+              role: "user" as const,
+              content: {
+                type: "text" as const,
+                text:
+                  `Use the memory_query tool to search project memories in CoChat. ` +
+                  `${queryInstruction}\n\n` +
+                  "Summarize what relevant context was found and how it applies to our current task.",
+              },
+            },
+          ],
+        };
+      }
+
+      case "memory-save": {
+        return {
+          description: "Save important context as a project memory",
+          messages: [
+            {
+              role: "user" as const,
+              content: {
+                type: "text" as const,
+                text:
+                  "Look at the important decisions, patterns, or context from our current " +
+                  "conversation that should be remembered for future work on this project. " +
+                  "Use the memory_add tool to save it to CoChat.\n\n" +
+                  "Focus on:\n" +
+                  "- Design decisions and their rationale\n" +
+                  "- Architectural patterns chosen\n" +
+                  "- Important constraints or gotchas discovered\n" +
+                  "- Key technical context that would help future conversations",
+              },
+            },
+          ],
+        };
+      }
+
+      case "automations-run": {
+        return {
+          description: "List and run a project automation",
+          messages: [
+            {
+              role: "user" as const,
+              content: {
+                type: "text" as const,
+                text:
+                  "First use automations_list to show the available automations for this " +
+                  "project. Then ask which one to run and use automations_trigger to execute it.",
+              },
+            },
+          ],
+        };
+      }
+
+      default:
+        throw new Error(`Unknown prompt: ${name}`);
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Resources
+  // -----------------------------------------------------------------------
+
+  server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+    resources: listPlanResources(),
+  }));
+
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const { uri } = request.params;
+    try {
+      const client = await getClient();
+      const resource = await readPlanResource(uri, client);
+      if (!resource) throw new Error(`Unknown resource: ${uri}`);
+      return { contents: [resource] };
+    } catch (err) {
+      throw new Error(
+        `Failed to read resource ${uri}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  });
+
+  server.setRequestHandler(SubscribeRequestSchema, async (request) => {
+    const { uri } = request.params;
+    try {
+      const client = await getClient();
+      subscribeToPlan(uri, client, server);
+    } catch {
+      // Can't subscribe without config
+    }
+    return {};
+  });
+
+  server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
+    const { uri } = request.params;
+    unsubscribeFromPlan(uri);
+    return {};
+  });
+
+  // -----------------------------------------------------------------------
+  // Cleanup
+  // -----------------------------------------------------------------------
+
+  const origClose = server.close.bind(server);
+  server.close = async () => {
+    cleanupSubscriptions();
+    return origClose();
+  };
+
+  return server;
+}

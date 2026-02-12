@@ -1,0 +1,56 @@
+{
+  "name": "@cochatai/mcp-cochat",
+  "version": "0.1.0",
+  "description": "CoChat MCP server to connect plans and content to CoChat conversations",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "mcp-cochat": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "cochat",
+    "plans",
+    "collaboration",
+    "opencode",
+    "cursor",
+    "claude-code",
+    "codex"
+  ],
+  "author": "CoChatAI",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CoChatAI/mcp-cochat.git"
+  },
+  "homepage": "https://github.com/CoChatAI/mcp-cochat#readme",
+  "bugs": {
+    "url": "https://github.com/CoChatAI/mcp-cochat/issues"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "typescript": "^5.7.3",
+    "vitest": "^4.0.18"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
