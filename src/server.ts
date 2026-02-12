@@ -4,6 +4,7 @@ import {
   GetPromptRequestSchema,
   ListPromptsRequestSchema,
   ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
   SubscribeRequestSchema,
@@ -503,6 +504,17 @@ export function createServer(): Server {
 
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({
     resources: listPlanResources(),
+  }));
+
+  server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+    resourceTemplates: [
+      {
+        uriTemplate: "cochat://plan/{chat_id}",
+        name: "CoChat Plan",
+        description: "A shared implementation plan in CoChat. Provide the chat_id to read the plan content.",
+        mimeType: "text/markdown",
+      },
+    ],
   }));
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {

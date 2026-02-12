@@ -15,6 +15,7 @@ export interface PlanItem {
 
 export interface PlanMetadata {
   source: string;
+  model?: string;
   sessionId?: string;
   createdAt: string;
   updatedAt: string;
@@ -77,9 +78,12 @@ export function planToMarkdown(plan: Plan): string {
   lines.push(PLAN_MARKER);
   lines.push(`# Plan: ${plan.title}`);
   lines.push("");
-  lines.push(
-    `> Shared from ${plan.metadata.source} | Updated: ${plan.metadata.updatedAt}`
-  );
+  const metaParts = [`Shared from ${plan.metadata.source}`];
+  if (plan.metadata.model) {
+    metaParts.push(`Model: ${plan.metadata.model}`);
+  }
+  metaParts.push(`Updated: ${plan.metadata.updatedAt}`);
+  lines.push(`> ${metaParts.join(" | ")}`);
   lines.push("");
 
   if (plan.description) {
@@ -148,10 +152,13 @@ export function markdownToPlan(md: string): Plan | null {
   // Extract metadata from blockquote
   const metaLine = lines.find((l) => l.startsWith("> Shared from "));
   let source = "unknown";
+  let model: string | undefined;
   let updatedAt = new Date().toISOString();
   if (metaLine) {
     const sourceMatch = metaLine.match(/Shared from ([^|]+)/);
     if (sourceMatch) source = sourceMatch[1].trim();
+    const modelMatch = metaLine.match(/Model: ([^|]+)/);
+    if (modelMatch) model = modelMatch[1].trim();
     const dateMatch = metaLine.match(/Updated: (.+)/);
     if (dateMatch) updatedAt = dateMatch[1].trim();
   }
@@ -201,6 +208,7 @@ export function markdownToPlan(md: string): Plan | null {
     items,
     metadata: {
       source,
+      model,
       createdAt: updatedAt, // best guess from what's in the markdown
       updatedAt,
     },
@@ -245,6 +253,7 @@ function buildTree(parsed: ParsedLine[]): PlanItem[] {
 /**
  * Check if a chat message contains a plan created by this MCP server.
  */
-export function isPlanMessage(content: string): boolean {
+export function isPlanMessage(content: string | null | undefined): boolean {
+  if (!content) return false;
   return content.includes(PLAN_MARKER);
 }

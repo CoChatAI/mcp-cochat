@@ -28,6 +28,13 @@ export const PlansShareSchema = z.object({
     .array(z.string())
     .optional()
     .describe("Email addresses of engineers to invite to collaborate"),
+  model: z
+    .string()
+    .optional()
+    .describe(
+      "The model that created this plan (e.g., 'anthropic/claude-opus-4.6'). " +
+      "Pass your own model identifier so engineers know which AI generated the plan."
+    ),
 });
 
 export type PlansShareInput = z.infer<typeof PlansShareSchema>;
@@ -52,6 +59,7 @@ export async function plansShare(
     items: input.items,
     metadata: {
       source: "coding-agent",
+      model: input.model,
       createdAt: now,
       updatedAt: now,
     },

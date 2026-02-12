@@ -386,9 +386,13 @@ export class CoChatClient {
 
     if (!history?.messages) return [];
 
-    return Object.values(history.messages).sort(
-      (a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0),
-    );
+    return Object.values(history.messages)
+      .map((m) => ({
+        ...m,
+        // Normalize null/undefined content to empty string
+        content: m.content ?? "",
+      }))
+      .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
   }
 
   chatUrl(chatId: string): string {
