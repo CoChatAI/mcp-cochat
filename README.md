@@ -8,7 +8,7 @@ MCP server that connects your coding agent to [CoChat](https://cochat.ai) so you
 AI coding agents (Claude Code, OpenCode, Cursor, Codex) are powerful -- but they work in silos:
 
 - **Your team can't see what the agent is building.** When Claude Code creates an implementation plan, it lives in your local session. Engineers can't review it, comment on it, or catch issues until you manually copy it somewhere.
-- **Other models can't review it either.** Maybe you want GPT-4o to critique your Claude plan, or Gemini to check the architecture. Today that means copy-pasting between chat windows.
+- **Other models can't review it either.** Maybe you want GPT-5.3 to critique your Claude plan, or Gemini to check the architecture. Today that means copy-pasting between chat windows.
 - **Knowledge doesn't persist.** Design decisions, architecture choices, and important context are trapped in individual chat sessions. Next week, nobody remembers why you chose PostgreSQL over MongoDB.
 
 **This MCP server connects the two worlds.**
@@ -27,7 +27,7 @@ AI coding agents (Claude Code, OpenCode, Cursor, Codex) are powerful -- but they
                                             │
                                       ┌─────┼──────────┐
                                       ▼     ▼          ▼
-                                    Alice  GPT-4o    Gemini
+                                    Alice  GPT-5.3    Gemini
                                     reviews reviews   checks
                                     tasks   arch.     security
                                       │     │          │
@@ -48,7 +48,7 @@ AI coding agents (Claude Code, OpenCode, Cursor, Codex) are powerful -- but they
 ### The Feedback Loop
 
 1. **You code** -- your agent creates an implementation plan
-2. **Everyone sees it** -- the plan appears in CoChat as a collaborative thread. Engineers, GPT-4o, Gemini -- anyone with access can review it
+2. **Everyone sees it** -- the plan appears in CoChat as a collaborative thread. Engineers, GPT-5.3, Gemini -- anyone with access can review it
 3. **Multi-perspective review** -- humans catch product issues, a different model spots architectural blind spots, another flags security concerns
 4. **You pull it back** -- your agent fetches all feedback and adapts
 5. **Knowledge compounds** -- design decisions get saved as project memories, searchable by any person or model in any future session
@@ -58,7 +58,7 @@ This means your Claude Code session isn't a black box. Your team stays in sync, 
 ### What You Get
 
 - **Plans** -- Implementation plans shared as collaborative chats. Engineers and AI models review and comment. Pull feedback back into your coding session.
-- **Cross-model review** -- Have GPT-4o review your Claude plan, or vice versa. CoChat supports multiple AI models, so you get diverse perspectives on the same plan.
+- **Cross-model review** -- Have GPT-5.3 review your Claude plan, or vice versa. CoChat supports multiple AI models, so you get diverse perspectives on the same plan.
 - **Project Memories** -- Semantic memory that persists across sessions and models. "Why did we pick PostgreSQL?" is answerable by anyone, in any tool.
 - **Ask** -- Query your project's knowledge base from your terminal. Get answers grounded in your team's actual decisions.
 - **Automations** -- Trigger CoChat automations (scheduled tasks, workflows) without switching context.
@@ -211,7 +211,7 @@ Claude creates plan and auto-shares to CoChat...
 
 Now in CoChat, your team and other AI models can review it:
 - Alice (engineer) comments: "Use refresh token rotation for better security"
-- GPT-4o (via CoChat) reviews and flags: "Consider rate limiting the token endpoint"
+- GPT-5.3 (via CoChat) reviews and flags: "Consider rate limiting the token endpoint"
 - Bob marks "Create login endpoint" as completed
 
 Back in your terminal:
@@ -222,7 +222,7 @@ Back in your terminal:
 Agent fetches from CoChat...
 
   Alice suggested using refresh token rotation.
-  GPT-4o flagged: add rate limiting to the token endpoint.
+  GPT-5.3 flagged: add rate limiting to the token endpoint.
   Bob marked "Create login endpoint" as completed.
   3 new feedback messages since you shared.
 
