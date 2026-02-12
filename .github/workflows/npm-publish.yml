@@ -29,6 +29,7 @@ jobs:
 
       - run: npm ci
       - run: npm run build
+      - run: npm test
 
       - name: Configure git
         run: |

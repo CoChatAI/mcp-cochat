@@ -7,6 +7,7 @@ import {
   ListResourceTemplatesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
+  RootsListChangedNotificationSchema,
   SubscribeRequestSchema,
   UnsubscribeRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
@@ -135,7 +136,7 @@ export function createServer(): Server {
 
   // Listen for root changes (e.g., user switches project)
   server.setNotificationHandler(
-    { method: "notifications/roots/list_changed" } as never,
+    RootsListChangedNotificationSchema,
     async () => {
       log.info("Roots changed, re-resolving project root");
       await resolveRoots();

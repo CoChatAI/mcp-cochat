@@ -1,49 +1,72 @@
 # @cochatai/mcp-cochat
 
-MCP server that connects your coding agent to [CoChat](https://cochat.ai) -- share implementation plans, query project memories, and trigger automations, all from within your editor.
+**Bridge your AI coding agent with your team.** Share plans, get feedback, and build shared project memory -- without leaving your terminal.
 
-Works with **OpenCode**, **Claude Code**, **Cursor**, **Codex CLI**, and **Kilo Code**.
+## The Problem
 
-## What It Does
+AI coding agents (Claude Code, OpenCode, Cursor, Codex) are powerful -- but they work in isolation. When your agent builds an implementation plan, that plan lives in your local session. Your team can't see it, review it, or give feedback until you manually copy it somewhere.
 
-When you're working in a coding agent and want to collaborate with your team, this MCP server bridges the gap:
+Meanwhile, your team is discussing architecture decisions in chat, building up project knowledge, and making decisions you can't access from your coding session.
 
-- **Plans** -- Share implementation plans as collaborative chat threads in CoChat. Engineers review, comment, and suggest changes. Pull feedback back into your coding session.
-- **Projects** -- Automatically creates a CoChat project (folder) for each codebase, scoped by git remote. Plans, memories, and automations are organized per-project.
-- **Memories** -- Query and store project knowledge in CoChat's semantic memory system. Design decisions, architectural patterns, and important context become available across all CoChat conversations for the project.
-- **Automations** -- List and trigger CoChat automations from your coding agent. Run scheduled tasks, webhook triggers, or manual workflows.
-- **Ask** -- Ask CoChat a question and get an AI-powered answer using the project's knowledge base and memories.
+**This MCP server connects the two worlds.**
 
-## Prerequisites
+## How It Works
 
-- **Node.js** >= 18.0.0
-- A **CoChat** instance (self-hosted or [app.cochat.ai](https://app.cochat.ai))
-- A **CoChat API key** (generate one in CoChat: Settings > Account > API Key)
-
-## Installation
-
-### OpenCode
-
-Add to your `opencode.json` (in the project root or `~/.config/opencode/config.json` for global):
-
-```jsonc
-{
-  "mcp": {
-    "cochat": {
-      "type": "local",
-      "command": ["npx", "@cochatai/mcp-cochat"],
-      "environment": {
-        "COCHAT_URL": "https://app.cochat.ai",
-        "COCHAT_API_KEY": "your-api-key"
-      }
-    }
-  }
-}
+```
+ Your Terminal                        CoChat (Team Workspace)
+ ─────────────                        ──────────────────────
+                                     
+ You: "Build a user dashboard"       
+       │                              
+       ▼                              
+ Agent creates plan ──────────────▶  Plan appears as collaborative
+ (auto-shared via MCP)                chat thread in project folder
+                                            │
+                                            ▼
+                                      Team reviews, comments,
+                                      suggests changes
+                                            │
+                                            ▼
+ Agent pulls feedback ◀──────────────  "Split charts into phases"
+ and adapts the plan                   "Auth endpoint looks good"
+       │                              
+       ▼                              
+ Agent saves decisions ──────────────▶ Project memories stored
+ as project memories                   (semantic search across team)
+       │                              
+       ▼                              
+ Next session: agent recalls ◀────── Memories available in all
+ past decisions automatically          CoChat conversations too
 ```
 
-Restart OpenCode to load the MCP. You'll see new slash commands: `/cochat:plans-share:mcp`, `/cochat:plans-pull:mcp`, `/cochat:memories-recall:mcp`, `/cochat:ask:mcp`, etc.
+### The Feedback Loop
 
-### Claude Code
+1. **You code** -- your agent creates an implementation plan
+2. **Team sees it** -- the plan appears in CoChat as a collaborative thread (with full design doc, task checklist, and architecture details)
+3. **Team reacts** -- engineers review, comment, mark tasks complete
+4. **You pull it back** -- your agent fetches the feedback and adapts
+5. **Knowledge compounds** -- design decisions get saved as project memories, available to everyone
+
+This loop means your team stays in sync without standups, Slack threads, or PRs-as-documentation. The agent does the sharing for you.
+
+### What You Get
+
+- **Plans** -- Implementation plans shared as collaborative chats. Engineers review and comment. Pull feedback back into your coding session.
+- **Project Memories** -- Semantic memory that persists across sessions. "Why did we pick PostgreSQL?" is answerable by anyone, in any tool.
+- **Ask** -- Query your project's knowledge base from your terminal. Get answers grounded in your team's actual decisions.
+- **Automations** -- Trigger CoChat automations (scheduled tasks, workflows) without switching context.
+- **Auto-scoping** -- Everything is automatically organized by project (detected from git remote or directory name). No manual setup.
+
+## Quick Start
+
+### 1. Get a CoChat API Key
+
+Sign up at [app.cochat.ai](https://app.cochat.ai) (or use your self-hosted instance), then go to **Settings > Account > API Key**.
+
+### 2. Add to Your Coding Agent
+
+<details>
+<summary><strong>Claude Code</strong></summary>
 
 ```bash
 claude mcp add cochat \
@@ -66,9 +89,36 @@ claude mcp add-json cochat '{
 }'
 ```
 
-MCP prompts become slash commands: `/mcp__cochat__plans-share`, `/mcp__cochat__memories-recall`, `/mcp__cochat__ask`, etc.
+Prompts become slash commands: `/mcp__cochat__plans-share`, `/mcp__cochat__memories-recall`, `/mcp__cochat__ask`, etc.
 
-### Cursor
+</details>
+
+<details>
+<summary><strong>OpenCode</strong></summary>
+
+Add to your `opencode.json` (project root or `~/.config/opencode/config.json` for global):
+
+```jsonc
+{
+  "mcp": {
+    "cochat": {
+      "type": "local",
+      "command": ["npx", "@cochatai/mcp-cochat"],
+      "environment": {
+        "COCHAT_URL": "https://app.cochat.ai",
+        "COCHAT_API_KEY": "your-api-key"
+      }
+    }
+  }
+}
+```
+
+Slash commands: `/cochat:plans-share:mcp`, `/cochat:plans-pull:mcp`, `/cochat:memories-recall:mcp`, `/cochat:ask:mcp`, etc.
+
+</details>
+
+<details>
+<summary><strong>Cursor</strong></summary>
 
 Add to `.cursor/mcp.json` in your project root:
 
@@ -89,7 +139,10 @@ Add to `.cursor/mcp.json` in your project root:
 
 Tools are available in Agent mode. Use `@cochat` to reference the MCP in chat.
 
-### Codex CLI
+</details>
+
+<details>
+<summary><strong>Codex CLI</strong></summary>
 
 Add to `~/.codex/config.toml`:
 
@@ -112,9 +165,12 @@ codex mcp add cochat \
   -- npx @cochatai/mcp-cochat
 ```
 
-### Kilo Code
+</details>
 
-Add the MCP server via Kilo Code's settings or CLI configuration. Use the standard MCP config format:
+<details>
+<summary><strong>Kilo Code</strong></summary>
+
+Add the MCP server via Kilo Code's settings. Use the standard MCP config format:
 
 ```json
 {
@@ -129,6 +185,35 @@ Add the MCP server via Kilo Code's settings or CLI configuration. Use the standa
 }
 ```
 
+</details>
+
+### 3. Start Using It
+
+Plans are shared automatically when your agent creates them. You can also use slash commands:
+
+```
+> Plan a user authentication system with JWT
+
+Agent creates plan and auto-shares to CoChat...
+
+  Plan "JWT Authentication System" shared successfully.
+  Chat URL: https://app.cochat.ai/c/abc123
+  Project: your-org/your-repo
+  Collaboration is enabled with write access via link.
+
+> Pull feedback on the plan
+
+Agent fetches from CoChat...
+
+  Alice suggested using refresh token rotation.
+  Bob marked "Create login endpoint" as completed.
+  2 new feedback messages since you shared.
+
+> Save the decision about refresh token rotation as a memory
+
+  Memory added. Available in all CoChat conversations for this project.
+```
+
 ## Configuration
 
 ### Environment Variables
@@ -137,6 +222,7 @@ Add the MCP server via Kilo Code's settings or CLI configuration. Use the standa
 |----------|----------|-------------|
 | `COCHAT_URL` | Yes | URL of your CoChat instance (e.g., `https://app.cochat.ai`) |
 | `COCHAT_API_KEY` | Yes | Your CoChat API key. Generate one in CoChat: Settings > Account > API Key |
+| `COCHAT_LOG_LEVEL` | No | Log verbosity: `debug`, `info` (default), `warn`, `error` |
 
 ### Elicitation (Interactive Setup)
 
@@ -146,127 +232,68 @@ If environment variables are not set and your MCP client supports [elicitation](
 
 The server stores project mappings and tracked plans in `~/.config/mcp-cochat/store.json`. This maps your local project directories to CoChat folders so plans and memories are scoped correctly.
 
+### Project Detection
+
+The server identifies your project automatically:
+
+1. **Git remote** -- parses `git remote get-url origin` (e.g., `anomalyco/my-project`)
+2. **MCP roots** -- uses the client-reported project directory if available
+3. **Directory name** -- falls back to `parent/folder` (e.g., `playground/tictactoe`)
+
+No manual project setup needed. The CoChat folder is created lazily on first use.
+
 ## Tools
 
 ### Plans
 
 | Tool | Description |
 |------|-------------|
-| `plans_share` | Share an implementation plan as a collaborative chat in CoChat. Creates the plan as an assistant message with full markdown (including task list checkboxes). The chat is placed in the project folder with collaboration enabled. |
-| `plans_pull` | Fetch the latest plan state and engineer feedback from CoChat. Returns the current task list and all reply messages from collaborators. |
-| `plans_update` | Push an updated plan to an existing CoChat chat thread. Atomically replaces the plan message content. |
-| `plans_list` | List all shared plans grouped by project, with feedback message counts. |
-
-#### Example: Sharing a Plan
-
-Ask your coding agent to share a plan:
-
-```
-> Share the implementation plan with the team
-
-The agent calls plans_share with:
-- title: "Add User Dashboard"
-- description: Full design document (architecture, data flow, edge cases...)
-- items: Structured task list with priorities and statuses
-
-Result:
-  Plan "Add User Dashboard" shared successfully.
-  Chat URL: https://app.cochat.ai/c/abc123
-  Project: anomalyco/my-project
-  Collaboration is enabled with write access via link.
-```
-
-Engineers open the URL in CoChat, review the plan, and add comments. Later:
-
-```
-> Pull the latest feedback on my plan
-
-The agent calls plans_pull and summarizes:
-  Alice suggested splitting the chart component into phases.
-  Bob marked "Create API endpoints" as completed.
-  2 new feedback messages since you shared.
-```
+| `plans_share` | Share an implementation plan as a collaborative chat in CoChat. Auto-called when the agent creates a plan. |
+| `plans_pull` | Fetch the latest plan state and engineer feedback from CoChat. |
+| `plans_update` | Push an updated plan to an existing CoChat chat thread. |
+| `plans_list` | List all shared plans grouped by project, with feedback counts. |
 
 ### Projects
 
 | Tool | Description |
 |------|-------------|
-| `projects_add` | Add a CoChat project for the current codebase. Auto-detects the project name from `git remote get-url origin` (e.g., `anomalyco/my-project`). If a project with this name already exists in CoChat, it reuses it. |
+| `projects_add` | Add a CoChat project for the current codebase. Auto-detects name from git remote. |
 | `projects_get` | Get the current project's metadata, system prompt, and file count. |
-| `projects_set_context` | Set the project system prompt. This is injected into all chats created in this project on CoChat, giving the AI context about the codebase. |
-
-Project folders are created lazily -- the first time you share a plan or add a memory, the project folder is automatically created in CoChat.
+| `projects_set_context` | Set the project system prompt, injected into all CoChat chats for this project. |
 
 ### Memories
 
 | Tool | Description |
 |------|-------------|
-| `memories_query` | Semantic search project memories. Returns the most relevant memories ranked by similarity to your query. |
-| `memories_add` | Store a memory in the current project. Design decisions, architectural patterns, and important context become available in all CoChat conversations for this project. |
+| `memories_query` | Semantic search project memories, ranked by relevance. |
+| `memories_add` | Store a design decision or important context as a project memory. |
 | `memories_list` | List all recent memories for the current project. |
 | `memories_delete` | Delete a specific memory by ID. |
-
-#### Example: Saving and Recalling Context
-
-```
-> Save the decision about using PostgreSQL with pgvector for embeddings
-
-The agent calls memories_add:
-  Memory added successfully.
-  This memory is now available in all CoChat conversations for this project.
-```
-
-Later, in a different session or by a different team member in CoChat:
-
-```
-> What embedding storage solution are we using?
-
-The agent calls memories_query:
-  Found: "We decided to use PostgreSQL with pgvector for embedding storage
-  because it avoids an additional infrastructure dependency and supports
-  HNSW indexing for fast approximate nearest neighbor search."
-```
 
 ### Automations
 
 | Tool | Description |
 |------|-------------|
-| `automations_list` | List automations for the current project. Shows trigger type, enabled status, last run, and next scheduled run. |
-| `automations_trigger` | Manually trigger a specific automation by ID. Returns the run ID and status. |
-| `automations_runs` | Get recent run history for an automation, including status, timing, and any errors. |
+| `automations_list` | List automations for the current project. |
+| `automations_trigger` | Manually trigger an automation by ID. |
+| `automations_runs` | Get recent run history for an automation. |
 
 ### Ask
 
 | Tool | Description |
 |------|-------------|
-| `cochat_ask` | Ask CoChat a question. Sends the question to CoChat's AI, which answers using the project's knowledge base and memories. On first use, automatically creates an "MCP Ask" automation in the project. |
-
-#### Example: Asking CoChat
-
-```
-> Ask CoChat what auth pattern we decided on
-
-The agent calls cochat_ask with:
-- question: "What authentication pattern was decided for this project?"
-
-Result:
-  Based on the project memories, you decided to use JWT with refresh
-  tokens stored in httpOnly cookies. The access token expires after
-  15 minutes and the refresh token after 7 days.
-```
+| `cochat_ask` | Ask CoChat a question. Gets an AI answer using the project's knowledge base and memories. |
 
 ## Prompts (Slash Commands)
 
-The MCP server exposes prompts that your client may surface as slash commands:
-
 | Prompt | Description |
 |--------|-------------|
-| `plans-share` | Instructs the AI to share the current plan with the team on CoChat. Includes detailed instructions to put the full design context (not just a summary) into the plan description. |
-| `plans-pull` | Instructs the AI to pull and summarize feedback from the most recent shared plan. |
-| `memories-recall` | Instructs the AI to search project memories for context relevant to the current task. |
-| `memories-save` | Instructs the AI to identify important decisions from the conversation and save them as project memories. |
-| `automations-run` | Instructs the AI to list available automations and ask which one to run. |
-| `ask` | Instructs the AI to ask CoChat a question about the project, using the project's knowledge and memories. |
+| `plans-share` | Share the current plan with the team. Instructs the AI to include the full design context. |
+| `plans-pull` | Pull and summarize feedback from the most recent shared plan. |
+| `memories-recall` | Search project memories for context relevant to the current task. |
+| `memories-save` | Save important decisions from the conversation as project memories. |
+| `automations-run` | List and run a project automation. |
+| `ask` | Ask CoChat a question about the project. |
 
 How these appear depends on your client:
 
@@ -280,54 +307,9 @@ How these appear depends on your client:
 
 ## Resources
 
-The server exposes subscribable resources for tracked plans:
-
 | URI Pattern | Description |
 |-------------|-------------|
-| `cochat://plan/{chat_id}` | The current state of a shared plan. Clients that support MCP resource subscriptions get notified when the plan changes in CoChat (polled every 10 seconds). |
-
-## How It Works
-
-### Project Scoping
-
-When any tool is called that needs a project context (plans, memories, automations), the server:
-
-1. Detects the project name from `git remote get-url origin` (e.g., `anomalyco/my-project`)
-2. Checks the local cache (`~/.config/mcp-cochat/store.json`) for an existing mapping
-3. If not cached, searches CoChat folders for a matching name
-4. If not found, creates a new CoChat folder with metadata linking it to the local path
-5. Caches the mapping for future use
-
-This means plans, memories, and automations are automatically scoped to the right project without any manual configuration.
-
-### Plan Format
-
-Plans are stored as assistant messages in CoChat collaborative chats. The message content is structured markdown:
-
-```markdown
-<!-- cochat-plan-mcp -->
-# Plan: Your Plan Title
-
-> Shared from coding-agent | Updated: 2026-02-12T10:30:00Z
-
-## Overview
-
-Full design document with rationale, architecture,
-data flow, edge cases, etc.
-
-## Tasks
-
-- [ ] **[HIGH]** First task
-- [x] **[HIGH]** Completed task
-- [ ] **[MED]** Medium priority task
-  - [ ] **[MED]** Sub-task
-- [ ] **[LOW]** Low priority task *(in progress)*
-
----
-*Reply below with feedback. The plan author can pull your comments back into their local session.*
-```
-
-The `<!-- cochat-plan-mcp -->` marker allows the server to identify plan messages when pulling updates.
+| `cochat://plan/{chat_id}` | Current state of a shared plan. Clients with MCP resource subscriptions get change notifications (polled every 10s). |
 
 ## Development
 
@@ -338,6 +320,7 @@ git clone https://github.com/CoChatAI/mcp-cochat.git
 cd mcp-cochat
 npm install
 npm run build
+npm test
 ```
 
 ### Running Tests
@@ -375,6 +358,12 @@ claude mcp add cochat \
   -- node /path/to/mcp-cochat/dist/index.js
 ```
 
+### Debugging
+
+The server logs to stderr (MCP uses stdout for JSON-RPC). Set `COCHAT_LOG_LEVEL=debug` for verbose output including all API requests.
+
+In Claude Code, stderr logs appear in `~/.claude/logs/`. In OpenCode, they appear in the terminal.
+
 ### Project Structure
 
 ```
@@ -384,6 +373,7 @@ src/
 ├── cochat-client.ts            # HTTP client for CoChat REST API
 ├── config.ts                   # Configuration and local state management
 ├── project.ts                  # Git remote detection, project name resolution
+├── logger.ts                   # Stderr logger (debug/info/warn/error)
 ├── plan-format.ts              # Plan <-> markdown serialization
 ├── schemas.ts                  # Shared Zod schemas
 ├── zod-to-json-schema.ts       # Lightweight Zod to JSON Schema converter
@@ -395,10 +385,10 @@ src/
 │   ├── projects-add.ts         # Find/create project folder
 │   ├── projects-get.ts         # Get project metadata
 │   ├── projects-set-context.ts # Set project system prompt
-│   ├── memories-query.ts        # Semantic search memories
-│   ├── memories-add.ts          # Add project memory
-│   ├── memories-list.ts         # List project memories
-│   ├── memories-delete.ts       # Delete memory
+│   ├── memories-query.ts       # Semantic search memories
+│   ├── memories-add.ts         # Add project memory
+│   ├── memories-list.ts        # List project memories
+│   ├── memories-delete.ts      # Delete memory
 │   ├── automations-list.ts     # List project automations
 │   ├── automations-trigger.ts  # Trigger automation
 │   ├── automations-runs.ts     # Get automation run history
@@ -411,13 +401,13 @@ src/
 
 | Feature | OpenCode | Claude Code | Codex CLI | Cursor | Kilo Code |
 |---------|----------|-------------|-----------|--------|-----------|
-| Tools (15) | Yes | Yes | Yes | Yes | Yes |
+| Tools (16) | Yes | Yes | Yes | Yes | Yes |
 | Prompts (6) | Yes | Yes | Varies | Varies | Varies |
 | Resources | Yes | Yes | Varies | Varies | Varies |
 | Resource Subscriptions | Yes | Likely | Unlikely | Unlikely | Unlikely |
 | Elicitation | Varies | Varies | Unlikely | Unlikely | Unlikely |
 
-All 15 tools work across every MCP-compatible client. Prompts and resources depend on the client's MCP spec support. Resource subscriptions (automatic change notifications) are a newer MCP feature -- clients that don't support them can use `plans_pull` as a manual alternative.
+All 16 tools work across every MCP-compatible client. Prompts and resources depend on the client's MCP spec support.
 
 ## License
 
