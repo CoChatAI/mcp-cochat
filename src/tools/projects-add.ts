@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CoChatClient, CoChatFolderResponse } from "../cochat-client.js";
 import { getProjectMapping, setProjectMapping } from "../config.js";
+import { log } from "../logger.js";
 import { resolveProjectName, resolveProjectPath } from "../project.js";
 
 export const ProjectsAddSchema = z.object({
@@ -32,13 +33,16 @@ export async function resolveCurrentProjectFolder(
 ): Promise<ResolvedProject> {
   const projectPath = resolveProjectPath();
   const projectName = overrideName ?? resolveProjectName();
+  log.info(`resolveProject: path="${projectPath}" name="${projectName}"`);
 
   // Check local cache
   const existing = getProjectMapping(projectPath);
   if (existing) {
+    log.debug(`resolveProject: found cached mapping (folder: ${existing.folderId})`);
     // Verify folder still exists
     try {
       await client.getFolder(existing.folderId);
+      log.debug("resolveProject: cached folder verified");
       return {
         folderId: existing.folderId,
         projectName: existing.projectName,
@@ -46,9 +50,14 @@ export async function resolveCurrentProjectFolder(
         folderUrl: client.folderUrl(existing.folderId),
         created: false,
       };
-    } catch {
+    } catch (err) {
+      log.warn(`resolveProject: cached folder ${existing.folderId} no longer exists, recreating`, {
+        error: err instanceof Error ? err.message : String(err),
+      });
       // Folder deleted remotely, fall through to find/create
     }
+  } else {
+    log.debug("resolveProject: no cached mapping found");
   }
 
   // Search existing folders by name

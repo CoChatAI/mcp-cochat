@@ -11,13 +11,15 @@ export async function automationsTrigger(
   client: CoChatClient,
   input: AutomationsTriggerInput,
 ): Promise<string> {
-  const run = await client.triggerAutomation(input.automation_id);
+  const result = await client.triggerAutomation(input.automation_id);
+
+  if (!result.success) {
+    return `Failed to trigger automation: ${result.error ?? "unknown error"}`;
+  }
 
   return [
     `Automation triggered successfully.`,
     ``,
-    `Run ID: ${run.id}`,
-    `Status: ${run.status}`,
-    `Started at: ${new Date(run.started_at * 1000).toISOString()}`,
+    `Message: ${result.message ?? "Automation triggered"}`,
   ].join("\n");
 }

@@ -1,4 +1,5 @@
 import type { CoChatConfig } from "./config.js";
+import { log } from "./logger.js";
 
 // ---------------------------------------------------------------------------
 // Response types
@@ -90,8 +91,29 @@ export interface CoChatAutomationRunResponse {
   status: string;
   started_at: number;
   completed_at: number | null;
-  action_results: unknown[] | null;
+  action_results: CoChatActionResult[] | null;
   error: string | null;
+}
+
+export interface CoChatActionResult {
+  action_id: string;
+  status: string;
+  output?: string;
+  duration_ms?: number;
+  error?: string;
+  [key: string]: unknown;
+}
+
+export interface CoChatAutomationForm {
+  name: string;
+  description?: string;
+  folder_id?: string;
+  trigger_type: string;
+  trigger_config: Record<string, unknown>;
+  actions: Record<string, unknown>[];
+  chat_output?: Record<string, unknown>;
+  is_enabled?: boolean;
+  max_runs?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,19 +156,31 @@ export class CoChatClient {
     body?: unknown,
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
-    const resp = await fetch(url, {
-      method,
-      headers: this.headers(),
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    log.debug(`API ${method} ${path}`);
+
+    let resp: Response;
+    try {
+      resp = await fetch(url, {
+        method,
+        headers: this.headers(),
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.error(`API ${method} ${path} network error: ${msg}`);
+      throw new CoChatClientError(0, `Network error on ${method} ${path}: ${msg}`);
+    }
 
     if (!resp.ok) {
       const text = await resp.text().catch(() => "");
+      log.error(`API ${method} ${path} failed (${resp.status}): ${text}`);
       throw new CoChatClientError(
         resp.status,
         `CoChat API ${method} ${path} failed (${resp.status}): ${text}`,
       );
     }
+
+    log.debug(`API ${method} ${path} -> ${resp.status}`);
 
     // Some DELETE endpoints return empty bodies
     const contentType = resp.headers.get("content-type") ?? "";
@@ -347,12 +381,25 @@ export class CoChatClient {
     );
   }
 
+  async createAutomation(
+    form: CoChatAutomationForm,
+  ): Promise<CoChatAutomationResponse> {
+    return this.request<CoChatAutomationResponse>(
+      "POST",
+      "/api/v1/automations/create",
+      form,
+    );
+  }
+
   async triggerAutomation(
     id: string,
-  ): Promise<CoChatAutomationRunResponse> {
-    return this.request<CoChatAutomationRunResponse>(
+    inputData?: Record<string, unknown>,
+  ): Promise<{ success: boolean; message?: string; error?: string }> {
+    const body = inputData ? { input: inputData } : undefined;
+    return this.request<{ success: boolean; message?: string; error?: string }>(
       "POST",
       `/api/v1/automations/${id}/run`,
+      body,
     );
   }
 
@@ -362,6 +409,15 @@ export class CoChatClient {
     return this.request<CoChatAutomationRunResponse[]>(
       "GET",
       `/api/v1/automations/${id}/runs`,
+    );
+  }
+
+  async getAutomationRun(
+    runId: string,
+  ): Promise<CoChatAutomationRunResponse> {
+    return this.request<CoChatAutomationRunResponse>(
+      "GET",
+      `/api/v1/automations/runs/${runId}`,
     );
   }
 

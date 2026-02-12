@@ -12,6 +12,7 @@ When you're working in a coding agent and want to collaborate with your team, th
 - **Projects** -- Automatically creates a CoChat project (folder) for each codebase, scoped by git remote. Plans, memories, and automations are organized per-project.
 - **Memories** -- Query and store project knowledge in CoChat's semantic memory system. Design decisions, architectural patterns, and important context become available across all CoChat conversations for the project.
 - **Automations** -- List and trigger CoChat automations from your coding agent. Run scheduled tasks, webhook triggers, or manual workflows.
+- **Ask** -- Ask CoChat a question and get an AI-powered answer using the project's knowledge base and memories.
 
 ## Prerequisites
 
@@ -40,7 +41,7 @@ Add to your `opencode.json` (in the project root or `~/.config/opencode/config.j
 }
 ```
 
-Restart OpenCode to load the MCP. You'll see new slash commands: `/cochat:plans-share:mcp`, `/cochat:plans-pull:mcp`, `/cochat:memory-recall:mcp`, etc.
+Restart OpenCode to load the MCP. You'll see new slash commands: `/cochat:plans-share:mcp`, `/cochat:plans-pull:mcp`, `/cochat:memories-recall:mcp`, `/cochat:ask:mcp`, etc.
 
 ### Claude Code
 
@@ -65,7 +66,7 @@ claude mcp add-json cochat '{
 }'
 ```
 
-MCP prompts become slash commands: `/mcp__cochat__plans-share`, `/mcp__cochat__memory-recall`, etc.
+MCP prompts become slash commands: `/mcp__cochat__plans-share`, `/mcp__cochat__memories-recall`, `/mcp__cochat__ask`, etc.
 
 ### Cursor
 
@@ -200,17 +201,17 @@ Project folders are created lazily -- the first time you share a plan or add a m
 
 | Tool | Description |
 |------|-------------|
-| `memory_query` | Semantic search project memories. Returns the most relevant memories ranked by similarity to your query. |
-| `memory_add` | Store a memory in the current project. Design decisions, architectural patterns, and important context become available in all CoChat conversations for this project. |
-| `memory_list` | List all recent memories for the current project. |
-| `memory_delete` | Delete a specific memory by ID. |
+| `memories_query` | Semantic search project memories. Returns the most relevant memories ranked by similarity to your query. |
+| `memories_add` | Store a memory in the current project. Design decisions, architectural patterns, and important context become available in all CoChat conversations for this project. |
+| `memories_list` | List all recent memories for the current project. |
+| `memories_delete` | Delete a specific memory by ID. |
 
 #### Example: Saving and Recalling Context
 
 ```
 > Save the decision about using PostgreSQL with pgvector for embeddings
 
-The agent calls memory_add:
+The agent calls memories_add:
   Memory added successfully.
   This memory is now available in all CoChat conversations for this project.
 ```
@@ -220,7 +221,7 @@ Later, in a different session or by a different team member in CoChat:
 ```
 > What embedding storage solution are we using?
 
-The agent calls memory_query:
+The agent calls memories_query:
   Found: "We decided to use PostgreSQL with pgvector for embedding storage
   because it avoids an additional infrastructure dependency and supports
   HNSW indexing for fast approximate nearest neighbor search."
@@ -234,6 +235,26 @@ The agent calls memory_query:
 | `automations_trigger` | Manually trigger a specific automation by ID. Returns the run ID and status. |
 | `automations_runs` | Get recent run history for an automation, including status, timing, and any errors. |
 
+### Ask
+
+| Tool | Description |
+|------|-------------|
+| `cochat_ask` | Ask CoChat a question. Sends the question to CoChat's AI, which answers using the project's knowledge base and memories. On first use, automatically creates an "MCP Ask" automation in the project. |
+
+#### Example: Asking CoChat
+
+```
+> Ask CoChat what auth pattern we decided on
+
+The agent calls cochat_ask with:
+- question: "What authentication pattern was decided for this project?"
+
+Result:
+  Based on the project memories, you decided to use JWT with refresh
+  tokens stored in httpOnly cookies. The access token expires after
+  15 minutes and the refresh token after 7 days.
+```
+
 ## Prompts (Slash Commands)
 
 The MCP server exposes prompts that your client may surface as slash commands:
@@ -242,9 +263,10 @@ The MCP server exposes prompts that your client may surface as slash commands:
 |--------|-------------|
 | `plans-share` | Instructs the AI to share the current plan with the team on CoChat. Includes detailed instructions to put the full design context (not just a summary) into the plan description. |
 | `plans-pull` | Instructs the AI to pull and summarize feedback from the most recent shared plan. |
-| `memory-recall` | Instructs the AI to search project memories for context relevant to the current task. |
-| `memory-save` | Instructs the AI to identify important decisions from the conversation and save them as project memories. |
+| `memories-recall` | Instructs the AI to search project memories for context relevant to the current task. |
+| `memories-save` | Instructs the AI to identify important decisions from the conversation and save them as project memories. |
 | `automations-run` | Instructs the AI to list available automations and ask which one to run. |
+| `ask` | Instructs the AI to ask CoChat a question about the project, using the project's knowledge and memories. |
 
 How these appear depends on your client:
 
@@ -373,13 +395,14 @@ src/
 │   ├── projects-add.ts         # Find/create project folder
 │   ├── projects-get.ts         # Get project metadata
 │   ├── projects-set-context.ts # Set project system prompt
-│   ├── memory-query.ts         # Semantic search memories
-│   ├── memory-add.ts           # Add project memory
-│   ├── memory-list.ts          # List project memories
-│   ├── memory-delete.ts        # Delete memory
+│   ├── memories-query.ts        # Semantic search memories
+│   ├── memories-add.ts          # Add project memory
+│   ├── memories-list.ts         # List project memories
+│   ├── memories-delete.ts       # Delete memory
 │   ├── automations-list.ts     # List project automations
 │   ├── automations-trigger.ts  # Trigger automation
-│   └── automations-runs.ts     # Get automation run history
+│   ├── automations-runs.ts     # Get automation run history
+│   └── cochat-ask.ts           # Ask CoChat a question
 └── resources/
     └── plan-resource.ts        # Subscribable plan resources
 ```
@@ -388,13 +411,13 @@ src/
 
 | Feature | OpenCode | Claude Code | Codex CLI | Cursor | Kilo Code |
 |---------|----------|-------------|-----------|--------|-----------|
-| Tools (14) | Yes | Yes | Yes | Yes | Yes |
-| Prompts (5) | Yes | Yes | Varies | Varies | Varies |
+| Tools (15) | Yes | Yes | Yes | Yes | Yes |
+| Prompts (6) | Yes | Yes | Varies | Varies | Varies |
 | Resources | Yes | Yes | Varies | Varies | Varies |
 | Resource Subscriptions | Yes | Likely | Unlikely | Unlikely | Unlikely |
 | Elicitation | Varies | Varies | Unlikely | Unlikely | Unlikely |
 
-All 14 tools work across every MCP-compatible client. Prompts and resources depend on the client's MCP spec support. Resource subscriptions (automatic change notifications) are a newer MCP feature -- clients that don't support them can use `plans_pull` as a manual alternative.
+All 15 tools work across every MCP-compatible client. Prompts and resources depend on the client's MCP spec support. Resource subscriptions (automatic change notifications) are a newer MCP feature -- clients that don't support them can use `plans_pull` as a manual alternative.
 
 ## License
 

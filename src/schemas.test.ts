@@ -6,9 +6,9 @@ import { PlansUpdateSchema } from "./tools/plans-update.js";
 import { ProjectsAddSchema } from "./tools/projects-add.js";
 import { ProjectsGetSchema } from "./tools/projects-get.js";
 import { ProjectsSetContextSchema } from "./tools/projects-set-context.js";
-import { MemoryQuerySchema } from "./tools/memory-query.js";
-import { MemoryAddSchema } from "./tools/memory-add.js";
-import { MemoryDeleteSchema } from "./tools/memory-delete.js";
+import { MemoryQuerySchema } from "./tools/memories-query.js";
+import { MemoryAddSchema } from "./tools/memories-add.js";
+import { MemoryDeleteSchema } from "./tools/memories-delete.js";
 import { AutomationsTriggerSchema } from "./tools/automations-trigger.js";
 import { AutomationsRunsSchema } from "./tools/automations-runs.js";
 

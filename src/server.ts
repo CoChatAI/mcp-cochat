@@ -14,6 +14,9 @@ import { zodToJsonSchema } from "./zod-to-json-schema.js";
 
 import { CoChatClient, CoChatClientError } from "./cochat-client.js";
 import { resolveConfig, persistConfig, type CoChatConfig } from "./config.js";
+import { log } from "./logger.js";
+
+import { setProjectRoot } from "./project.js";
 
 // Plans
 import { PlansShareSchema, plansShare } from "./tools/plans-share.js";
@@ -27,15 +30,18 @@ import { ProjectsGetSchema, projectsGet } from "./tools/projects-get.js";
 import { ProjectsSetContextSchema, projectsSetContext } from "./tools/projects-set-context.js";
 
 // Memories
-import { MemoryQuerySchema, memoryQuery } from "./tools/memory-query.js";
-import { MemoryAddSchema, memoryAdd } from "./tools/memory-add.js";
-import { memoryList } from "./tools/memory-list.js";
-import { MemoryDeleteSchema, memoryDelete } from "./tools/memory-delete.js";
+import { MemoryQuerySchema, memoryQuery } from "./tools/memories-query.js";
+import { MemoryAddSchema, memoryAdd } from "./tools/memories-add.js";
+import { memoryList } from "./tools/memories-list.js";
+import { MemoryDeleteSchema, memoryDelete } from "./tools/memories-delete.js";
 
 // Automations
 import { automationsList } from "./tools/automations-list.js";
 import { AutomationsTriggerSchema, automationsTrigger } from "./tools/automations-trigger.js";
 import { AutomationsRunsSchema, automationsRuns } from "./tools/automations-runs.js";
+
+// Ask
+import { CoChatAskSchema, cochatAsk } from "./tools/cochat-ask.js";
 
 // Resources
 import {
@@ -59,15 +65,82 @@ export function createServer(): Server {
         prompts: {},
         resources: { subscribe: true, listChanged: true },
       },
+      instructions:
+        "CoChat MCP bridges your coding session with your team's CoChat workspace.\n\n" +
+        "IMPORTANT BEHAVIOR — Automatic Plan Sharing:\n" +
+        "Whenever you create, discuss, or finalize an implementation plan, task breakdown, " +
+        "or design approach with the user, you MUST automatically call the plans_share tool " +
+        "to share it with the team on CoChat. Do NOT wait for the user to explicitly ask you " +
+        "to share — sharing is the default behavior.\n\n" +
+        "When sharing a plan:\n" +
+        "- Put the FULL plan context into the 'description' field (design rationale, architecture, " +
+        "data flow, technical approach, edge cases, alternatives considered). This should read like " +
+        "a complete design document, NOT a summary.\n" +
+        "- Put the structured task breakdown into the 'items' field.\n" +
+        "- Include your model identifier in the 'model' field.\n\n" +
+        "After sharing, tell the user the CoChat URL so they can see it.\n\n" +
+        "Other capabilities:\n" +
+        "- plans_pull: Fetch feedback from engineers on a shared plan\n" +
+        "- plans_update: Push plan updates as tasks are completed\n" +
+        "- memories_query/memories_add: Search and save project knowledge\n" +
+        "- cochat_ask: Ask CoChat questions using the project knowledge base",
     },
   );
 
   let _clientSupportsElicitation = false;
 
-  server.oninitialized = () => {
+  async function resolveRoots(): Promise<void> {
+    try {
+      const clientCaps = server.getClientCapabilities();
+      if (!clientCaps?.roots) {
+        log.debug("Client does not support roots");
+        return;
+      }
+
+      const result = await server.listRoots();
+      if (result.roots && result.roots.length > 0) {
+        // Use the first root as the project directory
+        const root = result.roots[0];
+        const rootPath = root.uri.startsWith("file://")
+          ? decodeURIComponent(root.uri.slice(7))
+          : root.uri;
+        log.info("Resolved project root from MCP roots", {
+          uri: root.uri,
+          name: root.name,
+          path: rootPath,
+        });
+        setProjectRoot(rootPath);
+      } else {
+        log.debug("Client returned empty roots list");
+      }
+    } catch (err) {
+      log.warn("Failed to resolve MCP roots, falling back to process.cwd()", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  server.oninitialized = async () => {
     const clientCaps = server.getClientCapabilities();
     _clientSupportsElicitation = !!clientCaps?.elicitation;
+    log.info("MCP server initialized", {
+      elicitation: _clientSupportsElicitation,
+      roots: !!clientCaps?.roots,
+      cwd: process.cwd(),
+    });
+
+    // Resolve project root from MCP roots (don't block initialization)
+    resolveRoots();
   };
+
+  // Listen for root changes (e.g., user switches project)
+  server.setNotificationHandler(
+    { method: "notifications/roots/list_changed" } as never,
+    async () => {
+      log.info("Roots changed, re-resolving project root");
+      await resolveRoots();
+    },
+  );
 
   // -----------------------------------------------------------------------
   // Config resolution
@@ -77,10 +150,12 @@ export function createServer(): Server {
     let config = resolveConfig();
 
     if (!config && _clientSupportsElicitation) {
+      log.info("Config not found, attempting elicitation");
       config = await elicitConfig(server);
     }
 
     if (!config) {
+      log.error("CoChat not configured: COCHAT_URL and/or COCHAT_API_KEY missing");
       throw new Error(
         "CoChat is not configured. Set COCHAT_URL and COCHAT_API_KEY environment variables.\n" +
           "Example:\n" +
@@ -90,6 +165,7 @@ export function createServer(): Server {
       );
     }
 
+    log.debug("Config resolved", { url: config.cochatUrl });
     return new CoChatClient(config);
   }
 
@@ -147,9 +223,11 @@ export function createServer(): Server {
         name: "plans_share",
         description:
           "Share an implementation plan with engineers via CoChat. Creates a collaborative " +
-          "chat thread in the project folder. IMPORTANT: The 'description' field should " +
-          "contain the FULL plan document in markdown -- design rationale, architecture, " +
-          "data flow, technical approach, edge cases. Engineers read this as the primary document.",
+          "chat thread in the project folder. Call this tool AUTOMATICALLY whenever you create " +
+          "or finalize a plan -- do not wait for the user to ask. IMPORTANT: The 'description' " +
+          "field should contain the FULL plan document in markdown -- design rationale, " +
+          "architecture, data flow, technical approach, edge cases. Engineers read this as " +
+          "the primary document. Include your model identifier in the 'model' field.",
         inputSchema: zodToJsonSchema(PlansShareSchema),
       },
       {
@@ -191,25 +269,25 @@ export function createServer(): Server {
 
       // --- Memories ---
       {
-        name: "memory_query",
+        name: "memories_query",
         description:
           "Semantic search project memories in CoChat. Returns relevant memories ranked by similarity.",
         inputSchema: zodToJsonSchema(MemoryQuerySchema),
       },
       {
-        name: "memory_add",
+        name: "memories_add",
         description:
           "Add a memory to the current project in CoChat. Design decisions, architectural " +
           "patterns, and important context become available in all CoChat conversations for this project.",
         inputSchema: zodToJsonSchema(MemoryAddSchema),
       },
       {
-        name: "memory_list",
+        name: "memories_list",
         description: "List recent memories for the current project.",
         inputSchema: { type: "object" as const, properties: {} },
       },
       {
-        name: "memory_delete",
+        name: "memories_delete",
         description: "Delete a specific memory by ID.",
         inputSchema: zodToJsonSchema(MemoryDeleteSchema),
       },
@@ -230,6 +308,16 @@ export function createServer(): Server {
         description: "Get recent run history for an automation.",
         inputSchema: zodToJsonSchema(AutomationsRunsSchema),
       },
+
+      // --- Ask ---
+      {
+        name: "cochat_ask",
+        description:
+          "Ask CoChat a question. Sends the question to CoChat's AI, which answers " +
+          "using the project's knowledge base and memories. Useful for getting context, " +
+          "checking decisions, or asking about project-specific topics.",
+        inputSchema: zodToJsonSchema(CoChatAskSchema),
+      },
     ],
   }));
 
@@ -239,6 +327,7 @@ export function createServer(): Server {
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
+    log.info(`Tool called: ${name}`, { cwd: process.cwd() });
 
     try {
       const client = await getClient();
@@ -271,16 +360,16 @@ export function createServer(): Server {
           break;
 
         // Memories
-        case "memory_query":
+        case "memories_query":
           result = await memoryQuery(client, MemoryQuerySchema.parse(args));
           break;
-        case "memory_add":
+        case "memories_add":
           result = await memoryAdd(client, MemoryAddSchema.parse(args));
           break;
-        case "memory_list":
+        case "memories_list":
           result = await memoryList(client);
           break;
-        case "memory_delete":
+        case "memories_delete":
           result = await memoryDelete(client, MemoryDeleteSchema.parse(args));
           break;
 
@@ -295,6 +384,11 @@ export function createServer(): Server {
           result = await automationsRuns(client, AutomationsRunsSchema.parse(args));
           break;
 
+        // Ask
+        case "cochat_ask":
+          result = await cochatAsk(client, CoChatAskSchema.parse(args));
+          break;
+
         default:
           return {
             content: [{ type: "text", text: `Unknown tool: ${name}` }],
@@ -302,6 +396,7 @@ export function createServer(): Server {
           };
       }
 
+      log.info(`Tool ${name} completed successfully`);
       return { content: [{ type: "text", text: result }] };
     } catch (err) {
       const message =
@@ -310,6 +405,11 @@ export function createServer(): Server {
           : err instanceof Error
             ? err.message
             : String(err);
+
+      log.error(`Tool ${name} failed: ${message}`, {
+        errorType: err instanceof CoChatClientError ? "api" : "internal",
+        stack: err instanceof Error ? err.stack : undefined,
+      });
 
       return { content: [{ type: "text", text: message }], isError: true };
     }
@@ -344,7 +444,7 @@ export function createServer(): Server {
         ],
       },
       {
-        name: "memory-recall",
+        name: "memories-recall",
         description: "Recall relevant project memories for the current coding task",
         arguments: [
           {
@@ -355,7 +455,7 @@ export function createServer(): Server {
         ],
       },
       {
-        name: "memory-save",
+        name: "memories-save",
         description: "Save a design decision or important context as a project memory",
         arguments: [],
       },
@@ -363,6 +463,17 @@ export function createServer(): Server {
         name: "automations-run",
         description: "List and run a project automation",
         arguments: [],
+      },
+      {
+        name: "ask",
+        description: "Ask CoChat a question about the project",
+        arguments: [
+          {
+            name: "question",
+            description: "The question to ask (optional, defaults to formulating one from context)",
+            required: false,
+          },
+        ],
       },
     ],
   }));
@@ -430,7 +541,7 @@ export function createServer(): Server {
         };
       }
 
-      case "memory-recall": {
+      case "memories-recall": {
         const query = args?.query ?? "";
         const queryInstruction = query
           ? `Search for: "${query}"`
@@ -444,7 +555,7 @@ export function createServer(): Server {
               content: {
                 type: "text" as const,
                 text:
-                  `Use the memory_query tool to search project memories in CoChat. ` +
+                  `Use the memories_query tool to search project memories in CoChat. ` +
                   `${queryInstruction}\n\n` +
                   "Summarize what relevant context was found and how it applies to our current task.",
               },
@@ -453,7 +564,7 @@ export function createServer(): Server {
         };
       }
 
-      case "memory-save": {
+      case "memories-save": {
         return {
           description: "Save important context as a project memory",
           messages: [
@@ -464,7 +575,7 @@ export function createServer(): Server {
                 text:
                   "Look at the important decisions, patterns, or context from our current " +
                   "conversation that should be remembered for future work on this project. " +
-                  "Use the memory_add tool to save it to CoChat.\n\n" +
+                  "Use the memories_add tool to save it to CoChat.\n\n" +
                   "Focus on:\n" +
                   "- Design decisions and their rationale\n" +
                   "- Architectural patterns chosen\n" +
@@ -487,6 +598,29 @@ export function createServer(): Server {
                 text:
                   "First use automations_list to show the available automations for this " +
                   "project. Then ask which one to run and use automations_trigger to execute it.",
+              },
+            },
+          ],
+        };
+      }
+
+      case "ask": {
+        const question = args?.question ?? "";
+        const questionInstruction = question
+          ? `Ask CoChat: "${question}"`
+          : "Formulate a relevant question based on what we're currently working on.";
+
+        return {
+          description: "Ask CoChat a question about the project",
+          messages: [
+            {
+              role: "user" as const,
+              content: {
+                type: "text" as const,
+                text:
+                  `Use the cochat_ask tool to ask CoChat a question. ${questionInstruction}\n\n` +
+                  "CoChat will answer using the project's knowledge base and memories. " +
+                  "Summarize the answer and how it relates to our current task.",
               },
             },
           ],

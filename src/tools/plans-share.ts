@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CoChatClient } from "../cochat-client.js";
 import { trackPlan } from "../config.js";
+import { log } from "../logger.js";
 import { planToMarkdown } from "../plan-format.js";
 import { PlanItemSchema } from "../schemas.js";
 import { resolveCurrentProjectFolder } from "./projects-add.js";
@@ -48,9 +49,13 @@ export async function plansShare(
   input: PlansShareInput,
 ): Promise<string> {
   const now = new Date().toISOString();
+  log.info(`plans_share: sharing plan "${input.title}"`);
 
   // Resolve project folder (lazy create if needed)
+  log.debug("plans_share: resolving project folder");
   const project = await resolveCurrentProjectFolder(client);
+  log.info(`plans_share: resolved project "${project.projectName}" (folder: ${project.folderId})`);
+
 
   // Build the plan markdown
   const plan = {
@@ -109,28 +114,35 @@ export async function plansShare(
   };
 
   // Create the chat
+  log.debug("plans_share: creating chat");
   const chat = await client.createChat(chatData);
+  log.info(`plans_share: chat created (id: ${chat.id})`);
 
   // Move into project folder
   if (project.folderId) {
+    log.debug(`plans_share: moving chat to folder ${project.folderId}`);
     await client.moveChatToFolder(chat.id, project.folderId);
   }
 
   // Enable collaboration
+  log.debug("plans_share: enabling collaboration");
   await client.enableCollaboration(chat.id);
 
   // Set link access to write so anyone with the link can collaborate
+  log.debug("plans_share: setting link access");
   await client.setLinkAccess(chat.id, "write");
 
   // Invite users if provided
   let invitedCount = 0;
   if (input.invite_emails && input.invite_emails.length > 0) {
+    log.debug(`plans_share: inviting ${input.invite_emails.length} users`);
     await client.inviteUsers(chat.id, input.invite_emails, "write");
     invitedCount = input.invite_emails.length;
   }
 
   // Track this plan locally
   const url = client.chatUrl(chat.id);
+  log.info(`plans_share: plan shared successfully at ${url}`);
   trackPlan({
     chatId: chat.id,
     planMessageId: messageId,

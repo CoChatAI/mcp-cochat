@@ -31,6 +31,8 @@ export interface TrackedPlan {
 export interface CoChatStore {
   projects: Record<string, ProjectMapping>;
   plans: Record<string, TrackedPlan>;
+  /** Maps project folderId to the "MCP Ask" automation ID for that project */
+  askAutomations: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -107,12 +109,13 @@ export function loadStore(): CoChatStore {
       return {
         projects: data.projects ?? {},
         plans: data.plans ?? {},
+        askAutomations: data.askAutomations ?? {},
       };
     }
   } catch {
     // ignore
   }
-  return { projects: {}, plans: {} };
+  return { projects: {}, plans: {}, askAutomations: {} };
 }
 
 export function saveStore(store: CoChatStore): void {
@@ -153,6 +156,24 @@ export function untrackPlan(chatId: string): void {
 export function getTrackedPlan(chatId: string): TrackedPlan | undefined {
   return loadStore().plans[chatId];
 }
+
+// ---------------------------------------------------------------------------
+// Ask automation helpers
+// ---------------------------------------------------------------------------
+
+export function getAskAutomationId(folderId: string): string | undefined {
+  return loadStore().askAutomations[folderId];
+}
+
+export function setAskAutomationId(folderId: string, automationId: string): void {
+  const store = loadStore();
+  store.askAutomations[folderId] = automationId;
+  saveStore(store);
+}
+
+// ---------------------------------------------------------------------------
+// Plan helpers (continued)
+// ---------------------------------------------------------------------------
 
 export function getMostRecentPlan(): TrackedPlan | undefined {
   const store = loadStore();

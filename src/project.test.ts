@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { resolveProjectName, resolveProjectPath } from "./project.js";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { resolveProjectName, resolveProjectPath, setProjectRoot } from "./project.js";
 
 // Mock child_process.execSync
 vi.mock("node:child_process", () => ({
@@ -13,6 +13,8 @@ const mockExecSync = vi.mocked(execSync);
 describe("resolveProjectName", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    // Reset the root override between tests
+    setProjectRoot(null as unknown as string);
   });
 
   it("parses SSH URL: git@github.com:anomalyco/cochat-open-webui.git", () => {
@@ -41,14 +43,23 @@ describe("resolveProjectName", () => {
     expect(resolveProjectName()).toBe("org/repo");
   });
 
-  it("falls back to basename of cwd when git remote fails", () => {
+  it("falls back to parent/folder when git remote fails", () => {
     mockExecSync.mockImplementation(() => {
       throw new Error("not a git repo");
     });
 
-    // process.cwd() returns an actual directory. We spy on it to control the value.
     const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/home/user/my-project");
-    expect(resolveProjectName()).toBe("my-project");
+    expect(resolveProjectName()).toBe("user/my-project");
+    cwdSpy.mockRestore();
+  });
+
+  it("uses parent/folder for non-git projects like playground/tictactoe", () => {
+    mockExecSync.mockImplementation(() => {
+      throw new Error("not a git repo");
+    });
+
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/Volumes/Source/playground/tictactoe");
+    expect(resolveProjectName()).toBe("playground/tictactoe");
     cwdSpy.mockRestore();
   });
 
@@ -71,9 +82,53 @@ describe("resolveProjectName", () => {
 });
 
 describe("resolveProjectPath", () => {
-  it("returns the current working directory", () => {
+  beforeEach(() => {
+    setProjectRoot(null as unknown as string);
+  });
+
+  it("returns the current working directory when no root override", () => {
     const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/some/path");
     expect(resolveProjectPath()).toBe("/some/path");
     cwdSpy.mockRestore();
+  });
+
+  it("returns MCP root override when set", () => {
+    setProjectRoot("/Volumes/Source/playground/tictactoe");
+    expect(resolveProjectPath()).toBe("/Volumes/Source/playground/tictactoe");
+  });
+});
+
+describe("setProjectRoot", () => {
+  beforeEach(() => {
+    setProjectRoot(null as unknown as string);
+  });
+
+  it("overrides process.cwd for project resolution", () => {
+    mockExecSync.mockImplementation(() => {
+      throw new Error("not a git repo");
+    });
+
+    // Without override, uses process.cwd()
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/wrong/path");
+    expect(resolveProjectPath()).toBe("/wrong/path");
+
+    // With override, uses the root
+    setProjectRoot("/Volumes/Source/playground/tictactoe");
+    expect(resolveProjectPath()).toBe("/Volumes/Source/playground/tictactoe");
+    expect(resolveProjectName()).toBe("playground/tictactoe");
+
+    cwdSpy.mockRestore();
+  });
+
+  it("runs git remote from the root directory", () => {
+    setProjectRoot("/my/project");
+    mockExecSync.mockReturnValue("git@github.com:org/repo.git\n");
+    
+    resolveProjectName();
+    
+    expect(mockExecSync).toHaveBeenCalledWith(
+      "git remote get-url origin",
+      expect.objectContaining({ cwd: "/my/project" }),
+    );
   });
 });
