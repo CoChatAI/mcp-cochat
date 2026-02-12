@@ -1,6 +1,6 @@
 {
   "name": "@cochatai/mcp-cochat",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "CoChat MCP server to connect plans and content to CoChat conversations",
   "type": "module",
   "main": "dist/index.js",
