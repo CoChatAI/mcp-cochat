@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -29,6 +29,25 @@ vi.mock("./config.js", async (importOriginal) => {
 });
 
 // ---------------------------------------------------------------------------
+// Env var management
+// ---------------------------------------------------------------------------
+
+let savedAutoShare: string | undefined;
+
+beforeEach(() => {
+  savedAutoShare = process.env.COCHAT_AUTO_SHARE;
+  delete process.env.COCHAT_AUTO_SHARE;
+});
+
+afterEach(() => {
+  if (savedAutoShare !== undefined) {
+    process.env.COCHAT_AUTO_SHARE = savedAutoShare;
+  } else {
+    delete process.env.COCHAT_AUTO_SHARE;
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Helper: wire up a client ↔ server pair over in-memory transport
 // ---------------------------------------------------------------------------
 
@@ -43,6 +62,11 @@ async function createConnectedPair() {
   ]);
 
   return { server, client };
+}
+
+function getToolDescription(tools: Array<{ name: string; description?: string }>, name: string): string {
+  const tool = tools.find((t) => t.name === name);
+  return tool?.description ?? "";
 }
 
 // ---------------------------------------------------------------------------
@@ -205,5 +229,76 @@ describe("createServer", () => {
   it("throws for unknown prompt name", async () => {
     const { client } = await createConnectedPair();
     await expect(client.getPrompt({ name: "nonexistent" })).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// COCHAT_AUTO_SHARE modes
+// ---------------------------------------------------------------------------
+
+describe("COCHAT_AUTO_SHARE modes", () => {
+  describe("off (default)", () => {
+    it("plans_share description says 'suggest' and 'ask the user'", async () => {
+      delete process.env.COCHAT_AUTO_SHARE;
+      const { client } = await createConnectedPair();
+      const result = await client.listTools();
+      const desc = getToolDescription(result.tools, "plans_share");
+
+      expect(desc).toContain("Suggest");
+      expect(desc).toContain("ask the user");
+      expect(desc).not.toContain("AUTOMATICALLY");
+    });
+
+    it("memories_add description does not mention proactive saving", async () => {
+      delete process.env.COCHAT_AUTO_SHARE;
+      const { client } = await createConnectedPair();
+      const result = await client.listTools();
+      const desc = getToolDescription(result.tools, "memories_add");
+
+      expect(desc).not.toContain("Proactively");
+      expect(desc).not.toContain("do not wait");
+    });
+  });
+
+  describe("plan", () => {
+    it("plans_share description says 'AUTOMATICALLY'", async () => {
+      process.env.COCHAT_AUTO_SHARE = "plan";
+      const { client } = await createConnectedPair();
+      const result = await client.listTools();
+      const desc = getToolDescription(result.tools, "plans_share");
+
+      expect(desc).toContain("AUTOMATICALLY");
+      expect(desc).not.toContain("ask the user");
+    });
+
+    it("memories_add description does not mention proactive saving", async () => {
+      process.env.COCHAT_AUTO_SHARE = "plan";
+      const { client } = await createConnectedPair();
+      const result = await client.listTools();
+      const desc = getToolDescription(result.tools, "memories_add");
+
+      expect(desc).not.toContain("Proactively");
+    });
+  });
+
+  describe("all", () => {
+    it("plans_share description says 'AUTOMATICALLY'", async () => {
+      process.env.COCHAT_AUTO_SHARE = "all";
+      const { client } = await createConnectedPair();
+      const result = await client.listTools();
+      const desc = getToolDescription(result.tools, "plans_share");
+
+      expect(desc).toContain("AUTOMATICALLY");
+    });
+
+    it("memories_add description mentions proactive saving", async () => {
+      process.env.COCHAT_AUTO_SHARE = "all";
+      const { client } = await createConnectedPair();
+      const result = await client.listTools();
+      const desc = getToolDescription(result.tools, "memories_add");
+
+      expect(desc).toContain("Proactively");
+      expect(desc).toContain("do not wait");
+    });
   });
 });

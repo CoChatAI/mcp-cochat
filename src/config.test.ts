@@ -20,6 +20,7 @@ vi.mock("node:fs", () => ({
 
 import {
   resolveConfig,
+  resolveAutoShareMode,
   persistConfig,
   loadStore,
   saveStore,
@@ -38,24 +39,23 @@ import {
 
 const savedEnv: Record<string, string | undefined> = {};
 
+const ENV_KEYS = ["COCHAT_URL", "COCHAT_API_KEY", "COCHAT_AUTO_SHARE"] as const;
+
 beforeEach(() => {
   fakeFs.clear();
-  savedEnv.COCHAT_URL = process.env.COCHAT_URL;
-  savedEnv.COCHAT_API_KEY = process.env.COCHAT_API_KEY;
-  delete process.env.COCHAT_URL;
-  delete process.env.COCHAT_API_KEY;
+  for (const key of ENV_KEYS) {
+    savedEnv[key] = process.env[key];
+    delete process.env[key];
+  }
 });
 
 afterEach(() => {
-  if (savedEnv.COCHAT_URL !== undefined) {
-    process.env.COCHAT_URL = savedEnv.COCHAT_URL;
-  } else {
-    delete process.env.COCHAT_URL;
-  }
-  if (savedEnv.COCHAT_API_KEY !== undefined) {
-    process.env.COCHAT_API_KEY = savedEnv.COCHAT_API_KEY;
-  } else {
-    delete process.env.COCHAT_API_KEY;
+  for (const key of ENV_KEYS) {
+    if (savedEnv[key] !== undefined) {
+      process.env[key] = savedEnv[key];
+    } else {
+      delete process.env[key];
+    }
   }
 });
 
@@ -220,5 +220,54 @@ describe("project mapping", () => {
 
   it("returns undefined for unmapped path", () => {
     expect(getProjectMapping("/does/not/exist")).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveAutoShareMode
+// ---------------------------------------------------------------------------
+
+describe("resolveAutoShareMode", () => {
+  it("defaults to 'off' when env var is not set", () => {
+    expect(resolveAutoShareMode()).toBe("off");
+  });
+
+  it("returns 'plan' when COCHAT_AUTO_SHARE=plan", () => {
+    process.env.COCHAT_AUTO_SHARE = "plan";
+    expect(resolveAutoShareMode()).toBe("plan");
+  });
+
+  it("returns 'all' when COCHAT_AUTO_SHARE=all", () => {
+    process.env.COCHAT_AUTO_SHARE = "all";
+    expect(resolveAutoShareMode()).toBe("all");
+  });
+
+  it("is case-insensitive", () => {
+    process.env.COCHAT_AUTO_SHARE = "PLAN";
+    expect(resolveAutoShareMode()).toBe("plan");
+
+    process.env.COCHAT_AUTO_SHARE = "All";
+    expect(resolveAutoShareMode()).toBe("all");
+  });
+
+  it("trims whitespace", () => {
+    process.env.COCHAT_AUTO_SHARE = "  plan  ";
+    expect(resolveAutoShareMode()).toBe("plan");
+  });
+
+  it("defaults to 'off' for unrecognized values", () => {
+    process.env.COCHAT_AUTO_SHARE = "yes";
+    expect(resolveAutoShareMode()).toBe("off");
+
+    process.env.COCHAT_AUTO_SHARE = "true";
+    expect(resolveAutoShareMode()).toBe("off");
+
+    process.env.COCHAT_AUTO_SHARE = "auto";
+    expect(resolveAutoShareMode()).toBe("off");
+  });
+
+  it("returns 'off' for empty string", () => {
+    process.env.COCHAT_AUTO_SHARE = "";
+    expect(resolveAutoShareMode()).toBe("off");
   });
 });

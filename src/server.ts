@@ -14,7 +14,7 @@ import {
 import { zodToJsonSchema } from "./zod-to-json-schema.js";
 
 import { CoChatClient, CoChatClientError } from "./cochat-client.js";
-import { resolveConfig, persistConfig, type CoChatConfig } from "./config.js";
+import { resolveConfig, persistConfig, resolveAutoShareMode, type CoChatConfig, type AutoShareMode } from "./config.js";
 import { log } from "./logger.js";
 
 import { setProjectRoot } from "./project.js";
@@ -54,10 +54,103 @@ import {
 } from "./resources/plan-resource.js";
 
 // ---------------------------------------------------------------------------
+// Instructions & descriptions – vary by COCHAT_AUTO_SHARE mode
+// ---------------------------------------------------------------------------
+
+function buildPlanSharingInstructions(mode: AutoShareMode): string {
+  switch (mode) {
+    case "all":
+    case "plan":
+      return (
+        "IMPORTANT — Automatic Plan Sharing:\n" +
+        "Whenever you create, discuss, or finalize an implementation plan, task breakdown, " +
+        "or design approach with the user, you MUST automatically call the plans_share tool " +
+        "to share it with the team on CoChat. Do NOT wait for the user to explicitly ask you " +
+        "to share — sharing is the default behavior."
+      );
+    default:
+      return (
+        "Plan Sharing:\n" +
+        "After completing an implementation plan, task breakdown, or design approach, " +
+        "suggest sharing it with the team on CoChat using the plans_share tool. " +
+        "Ask the user before sharing — do not share automatically."
+      );
+  }
+}
+
+function buildMemoryInstructions(mode: AutoShareMode): string {
+  if (mode === "all") {
+    return (
+      "\n\nAutomatic Memory Saving:\n" +
+      "When the conversation produces important design decisions, architectural patterns, " +
+      "or key technical context, automatically save them as project memories using " +
+      "memories_add. Do not wait for the user to ask — proactively preserve knowledge " +
+      "that would be valuable in future sessions."
+    );
+  }
+  return "";
+}
+
+function buildServerInstructions(mode: AutoShareMode): string {
+  return (
+    "CoChat MCP bridges your coding session with your team's CoChat workspace.\n\n" +
+    buildPlanSharingInstructions(mode) +
+    "\n\n" +
+    "When sharing a plan:\n" +
+    "- Put the FULL plan context into the 'description' field (design rationale, architecture, " +
+    "data flow, technical approach, edge cases, alternatives considered). This should read like " +
+    "a complete design document, NOT a summary.\n" +
+    "- Put the structured task breakdown into the 'items' field.\n" +
+    "- Include your model identifier in the 'model' field.\n\n" +
+    "After sharing, tell the user the CoChat URL so they can see it.\n\n" +
+    "Other capabilities:\n" +
+    "- plans_pull: Fetch feedback from engineers on a shared plan\n" +
+    "- plans_update: Push plan updates as tasks are completed\n" +
+    "- memories_query/memories_add: Search and save project knowledge\n" +
+    "- cochat_ask: Ask CoChat questions using the project knowledge base" +
+    buildMemoryInstructions(mode)
+  );
+}
+
+function buildPlanShareDescription(mode: AutoShareMode): string {
+  const base =
+    "Share an implementation plan with engineers via CoChat. Creates a collaborative " +
+    "chat thread in the project folder.";
+
+  const behavior =
+    mode === "plan" || mode === "all"
+      ? " Call this tool AUTOMATICALLY whenever you create or finalize a plan -- do not wait for the user to ask."
+      : " Suggest calling this tool after completing a plan -- ask the user before sharing.";
+
+  const format =
+    " IMPORTANT: The 'description' field should contain the FULL plan document in markdown -- " +
+    "design rationale, architecture, data flow, technical approach, edge cases. Engineers read " +
+    "this as the primary document. Include your model identifier in the 'model' field.";
+
+  return base + behavior + format;
+}
+
+function buildMemoryAddDescription(mode: AutoShareMode): string {
+  const base =
+    "Add a memory to the current project in CoChat. Design decisions, architectural " +
+    "patterns, and important context become available in all CoChat conversations for this project.";
+
+  if (mode === "all") {
+    return base +
+      " Proactively save important decisions and context from the conversation -- do not " +
+      "wait for the user to ask.";
+  }
+  return base;
+}
+
+// ---------------------------------------------------------------------------
 // Create and configure the MCP server
 // ---------------------------------------------------------------------------
 
 export function createServer(): Server {
+  const autoShareMode = resolveAutoShareMode();
+  log.info(`Auto-share mode: ${autoShareMode}`);
+
   const server = new Server(
     { name: "cochat", version: "0.2.0" },
     {
@@ -66,25 +159,7 @@ export function createServer(): Server {
         prompts: {},
         resources: { subscribe: true, listChanged: true },
       },
-      instructions:
-        "CoChat MCP bridges your coding session with your team's CoChat workspace.\n\n" +
-        "IMPORTANT BEHAVIOR — Automatic Plan Sharing:\n" +
-        "Whenever you create, discuss, or finalize an implementation plan, task breakdown, " +
-        "or design approach with the user, you MUST automatically call the plans_share tool " +
-        "to share it with the team on CoChat. Do NOT wait for the user to explicitly ask you " +
-        "to share — sharing is the default behavior.\n\n" +
-        "When sharing a plan:\n" +
-        "- Put the FULL plan context into the 'description' field (design rationale, architecture, " +
-        "data flow, technical approach, edge cases, alternatives considered). This should read like " +
-        "a complete design document, NOT a summary.\n" +
-        "- Put the structured task breakdown into the 'items' field.\n" +
-        "- Include your model identifier in the 'model' field.\n\n" +
-        "After sharing, tell the user the CoChat URL so they can see it.\n\n" +
-        "Other capabilities:\n" +
-        "- plans_pull: Fetch feedback from engineers on a shared plan\n" +
-        "- plans_update: Push plan updates as tasks are completed\n" +
-        "- memories_query/memories_add: Search and save project knowledge\n" +
-        "- cochat_ask: Ask CoChat questions using the project knowledge base",
+      instructions: buildServerInstructions(autoShareMode),
     },
   );
 
@@ -222,13 +297,7 @@ export function createServer(): Server {
       // --- Plans ---
       {
         name: "plans_share",
-        description:
-          "Share an implementation plan with engineers via CoChat. Creates a collaborative " +
-          "chat thread in the project folder. Call this tool AUTOMATICALLY whenever you create " +
-          "or finalize a plan -- do not wait for the user to ask. IMPORTANT: The 'description' " +
-          "field should contain the FULL plan document in markdown -- design rationale, " +
-          "architecture, data flow, technical approach, edge cases. Engineers read this as " +
-          "the primary document. Include your model identifier in the 'model' field.",
+        description: buildPlanShareDescription(autoShareMode),
         inputSchema: zodToJsonSchema(PlansShareSchema),
       },
       {
@@ -277,9 +346,7 @@ export function createServer(): Server {
       },
       {
         name: "memories_add",
-        description:
-          "Add a memory to the current project in CoChat. Design decisions, architectural " +
-          "patterns, and important context become available in all CoChat conversations for this project.",
+        description: buildMemoryAddDescription(autoShareMode),
         inputSchema: zodToJsonSchema(MemoryAddSchema),
       },
       {

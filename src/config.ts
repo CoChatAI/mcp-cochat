@@ -36,6 +36,25 @@ export interface CoChatStore {
 }
 
 // ---------------------------------------------------------------------------
+// Auto-share mode
+// ---------------------------------------------------------------------------
+
+export type AutoShareMode = "off" | "plan" | "all";
+
+/**
+ * Resolve the auto-share behavior from `COCHAT_AUTO_SHARE` env var.
+ *
+ * - "off"  (default) — Agent suggests sharing after creating a plan, waits for user
+ * - "plan" — Agent automatically shares plans without asking
+ * - "all"  — Auto-share plans AND auto-save design decisions as memories
+ */
+export function resolveAutoShareMode(): AutoShareMode {
+  const raw = process.env.COCHAT_AUTO_SHARE?.toLowerCase().trim();
+  if (raw === "plan" || raw === "all") return raw;
+  return "off";
+}
+
+// ---------------------------------------------------------------------------
 // Paths
 // ---------------------------------------------------------------------------
 

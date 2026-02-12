@@ -1,58 +1,65 @@
-# @cochatai/mcp-cochat
+# CoChat MCP
+**Share plans. Get feedback. Ship faster.**
 
-**Bridge your AI coding agent with your team.** Share plans, get feedback, and build shared project memory -- without leaving your terminal.
+MCP server that connects your coding agent to [CoChat](https://cochat.ai) so your team and other AI models can review what you're building, without leaving your terminal.
 
 ## The Problem
 
-AI coding agents (Claude Code, OpenCode, Cursor, Codex) are powerful -- but they work in isolation. When your agent builds an implementation plan, that plan lives in your local session. Your team can't see it, review it, or give feedback until you manually copy it somewhere.
+AI coding agents (Claude Code, OpenCode, Cursor, Codex) are powerful -- but they work in silos:
 
-Meanwhile, your team is discussing architecture decisions in chat, building up project knowledge, and making decisions you can't access from your coding session.
+- **Your team can't see what the agent is building.** When Claude Code creates an implementation plan, it lives in your local session. Engineers can't review it, comment on it, or catch issues until you manually copy it somewhere.
+- **Other models can't review it either.** Maybe you want GPT-4o to critique your Claude plan, or Gemini to check the architecture. Today that means copy-pasting between chat windows.
+- **Knowledge doesn't persist.** Design decisions, architecture choices, and important context are trapped in individual chat sessions. Next week, nobody remembers why you chose PostgreSQL over MongoDB.
 
 **This MCP server connects the two worlds.**
 
 ## How It Works
 
 ```
- Your Terminal                        CoChat (Team Workspace)
- ─────────────                        ──────────────────────
+ Your Coding Agent                    CoChat (Team + AI Workspace)
+ ──────────────────                   ────────────────────────────
                                      
  You: "Build a user dashboard"       
        │                              
        ▼                              
- Agent creates plan ──────────────▶  Plan appears as collaborative
+ Claude creates plan ─────────────▶  Plan appears as collaborative
  (auto-shared via MCP)                chat thread in project folder
                                             │
+                                      ┌─────┼──────────┐
+                                      ▼     ▼          ▼
+                                    Alice  GPT-4o    Gemini
+                                    reviews reviews   checks
+                                    tasks   arch.     security
+                                      │     │          │
+                                      └─────┼──────────┘
                                             ▼
-                                      Team reviews, comments,
-                                      suggests changes
-                                            │
-                                            ▼
- Agent pulls feedback ◀──────────────  "Split charts into phases"
- and adapts the plan                   "Auth endpoint looks good"
+ Agent pulls feedback ◀──────────────  "Use refresh token rotation"
+ and adapts the plan                   "Add rate limiting to auth"
        │                              
        ▼                              
  Agent saves decisions ──────────────▶ Project memories stored
- as project memories                   (semantic search across team)
+ as project memories                   (searchable by any model/person)
        │                              
        ▼                              
- Next session: agent recalls ◀────── Memories available in all
- past decisions automatically          CoChat conversations too
+ Next session: any agent  ◀────────── Memories available in all
+ recalls past decisions                CoChat conversations too
 ```
 
 ### The Feedback Loop
 
 1. **You code** -- your agent creates an implementation plan
-2. **Team sees it** -- the plan appears in CoChat as a collaborative thread (with full design doc, task checklist, and architecture details)
-3. **Team reacts** -- engineers review, comment, mark tasks complete
-4. **You pull it back** -- your agent fetches the feedback and adapts
-5. **Knowledge compounds** -- design decisions get saved as project memories, available to everyone
+2. **Everyone sees it** -- the plan appears in CoChat as a collaborative thread. Engineers, GPT-4o, Gemini -- anyone with access can review it
+3. **Multi-perspective review** -- humans catch product issues, a different model spots architectural blind spots, another flags security concerns
+4. **You pull it back** -- your agent fetches all feedback and adapts
+5. **Knowledge compounds** -- design decisions get saved as project memories, searchable by any person or model in any future session
 
-This loop means your team stays in sync without standups, Slack threads, or PRs-as-documentation. The agent does the sharing for you.
+This means your Claude Code session isn't a black box. Your team stays in sync, other models provide second opinions, and decisions persist across sessions -- without standups, Slack threads, or PRs-as-documentation.
 
 ### What You Get
 
-- **Plans** -- Implementation plans shared as collaborative chats. Engineers review and comment. Pull feedback back into your coding session.
-- **Project Memories** -- Semantic memory that persists across sessions. "Why did we pick PostgreSQL?" is answerable by anyone, in any tool.
+- **Plans** -- Implementation plans shared as collaborative chats. Engineers and AI models review and comment. Pull feedback back into your coding session.
+- **Cross-model review** -- Have GPT-4o review your Claude plan, or vice versa. CoChat supports multiple AI models, so you get diverse perspectives on the same plan.
+- **Project Memories** -- Semantic memory that persists across sessions and models. "Why did we pick PostgreSQL?" is answerable by anyone, in any tool.
 - **Ask** -- Query your project's knowledge base from your terminal. Get answers grounded in your team's actual decisions.
 - **Automations** -- Trigger CoChat automations (scheduled tasks, workflows) without switching context.
 - **Auto-scoping** -- Everything is automatically organized by project (detected from git remote or directory name). No manual setup.
@@ -194,20 +201,30 @@ Plans are shared automatically when your agent creates them. You can also use sl
 ```
 > Plan a user authentication system with JWT
 
-Agent creates plan and auto-shares to CoChat...
+Claude creates plan and auto-shares to CoChat...
 
   Plan "JWT Authentication System" shared successfully.
   Chat URL: https://app.cochat.ai/c/abc123
   Project: your-org/your-repo
   Collaboration is enabled with write access via link.
+```
 
+Now in CoChat, your team and other AI models can review it:
+- Alice (engineer) comments: "Use refresh token rotation for better security"
+- GPT-4o (via CoChat) reviews and flags: "Consider rate limiting the token endpoint"
+- Bob marks "Create login endpoint" as completed
+
+Back in your terminal:
+
+```
 > Pull feedback on the plan
 
 Agent fetches from CoChat...
 
   Alice suggested using refresh token rotation.
+  GPT-4o flagged: add rate limiting to the token endpoint.
   Bob marked "Create login endpoint" as completed.
-  2 new feedback messages since you shared.
+  3 new feedback messages since you shared.
 
 > Save the decision about refresh token rotation as a memory
 
@@ -222,7 +239,28 @@ Agent fetches from CoChat...
 |----------|----------|-------------|
 | `COCHAT_URL` | Yes | URL of your CoChat instance (e.g., `https://app.cochat.ai`) |
 | `COCHAT_API_KEY` | Yes | Your CoChat API key. Generate one in CoChat: Settings > Account > API Key |
+| `COCHAT_AUTO_SHARE` | No | Controls automatic sharing behavior (see below) |
 | `COCHAT_LOG_LEVEL` | No | Log verbosity: `debug`, `info` (default), `warn`, `error` |
+
+### Auto-Share Behavior (`COCHAT_AUTO_SHARE`)
+
+Controls how proactively the agent shares plans and saves memories:
+
+| Value | Plans | Memories | Description |
+|-------|-------|----------|-------------|
+| `off` (default) | Agent suggests sharing, waits for you | On request only | You stay in control. Agent says "Want me to share this plan?" after creating one. |
+| `plan` | Shared automatically | On request only | Plans are pushed to CoChat as soon as they're created. Good for teams that always want visibility. |
+| `all` | Shared automatically | Saved automatically | Full automation. Plans are shared and design decisions are saved as project memories without asking. |
+
+Example -- add to your MCP config to enable automatic plan sharing:
+
+```json
+"env": {
+  "COCHAT_URL": "https://app.cochat.ai",
+  "COCHAT_API_KEY": "your-api-key",
+  "COCHAT_AUTO_SHARE": "plan"
+}
+```
 
 ### Elicitation (Interactive Setup)
 
